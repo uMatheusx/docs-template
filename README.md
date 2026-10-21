@@ -49,6 +49,8 @@ cd frontend && npm run lint && npm run typecheck && npm run build
 cd backend  && ruff check app tests e2e_server.py && pytest
 ```
 
+Tudo de uma vez, igual à CI (no Windows): `./scripts/check.ps1` — com `-E2E` inclui os testes de ponta a ponta e com `-Docker` recria o container do app se tudo passar. A CI (`.github/workflows/ci.yml`) roda backend, frontend, ponta a ponta e o build da imagem Docker a cada push e pull request.
+
 Testes de ponta a ponta (Playwright): sobem sozinhos um backend com AWS simulada em memória (`backend/e2e_server.py`, com páginas de exemplo e usuários de teste) e um Vite apontando para ele, então não dependem do Docker nem do `.env`. Cobrem leitura, busca, redirecionamento, login, criação e publicação de página e o fluxo de revisão.
 
 ```bash
