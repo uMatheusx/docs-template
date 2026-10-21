@@ -235,6 +235,7 @@ export const keys = {
     `/api/admin/reviews?state=${state}${pageId ? `&page_id=${pageId}` : ""}`,
   review: (id: string) => `/api/admin/reviews/${id}`,
   pageByPath: (path: string) => `/api/pages/by-path?path=${encodeURIComponent(path)}`,
+  redirect: (path: string) => `/api/redirects?path=${encodeURIComponent(path)}`,
   adminPage: (id: string) => `/api/admin/pages/${id}`,
   history: (id: string) => `/api/admin/pages/${id}/history`,
   search: (q: string) => `/api/search?q=${encodeURIComponent(q)}`,

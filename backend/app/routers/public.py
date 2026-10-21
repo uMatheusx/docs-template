@@ -45,6 +45,16 @@ def page_by_path(
     return svc.get_page_by_path(path, include_drafts=user is not None)
 
 
+@router.get("/redirects")
+def redirect(
+    path: str = Query(min_length=1),
+    user: User | None = Depends(require_reader),
+    svc: DocsService = Depends(get_service),
+) -> dict[str, str]:
+    """Endereço atual de uma página renomeada ou movida (404 se nunca existiu ou foi excluída)."""
+    return {"path": svc.resolve_redirect(path, include_drafts=user is not None)}
+
+
 @router.get("/pages/{page_id}", response_model=Page)
 def page(page_id: str, user: User | None = Depends(require_reader), svc: DocsService = Depends(get_service)):
     return svc.get_page(page_id, include_drafts=user is not None)

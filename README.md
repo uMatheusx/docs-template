@@ -117,6 +117,10 @@ Sem filtro, a referência inteira é exibida. O trecho acompanha a especificaç�
 - Ignora acentos e maiúsculas ("autenticacao" encontra "Autenticação")
 - Índice em memória montado com um único Scan e reaproveitado entre buscas; gravações da própria instância o atualizam na hora e as de outras instâncias aparecem em até `SEARCH_CACHE_TTL_SECONDS` (padrão 60)
 
+**Endereços antigos continuam funcionando**
+- Ao renomear o slug ou mover uma página, o endereço antigo (dela e de todas as subpáginas) passa a levar ao novo, mantendo a âncora `#seção`
+- O redirecionamento aponta para a página, não para um endereço: mudanças seguidas não criam cadeias, e uma página excluída volta a dar 404. Consulta: `GET /api/redirects?path=...`
+
 **Links e imagens quebrados**
 - O checklist de qualidade verifica links internos (`/docs/...`) para páginas inexistentes ou em rascunho e imagens/arquivos (`/api/assets/...`) apagados do S3, com página e linha de cada ocorrência — e entram no score de saúde
 

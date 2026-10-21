@@ -37,6 +37,9 @@ export default function DocPage() {
   const { href } = useDocsBase();
   const editable = !!user;
   const { data: page, error, isLoading } = useSWR<Page>(keys.pageByPath(path));
+  const notFound = error instanceof ApiError && error.status === 404;
+  // página renomeada ou movida: o endereço antigo leva ao atual
+  const { data: moved, error: redirectError } = useSWR<{ path: string }>(notFound ? keys.redirect(path) : null);
   const articleRef = useRef<HTMLElement>(null);
 
   const { prev, next } = useMemo(() => {
@@ -58,8 +61,12 @@ export default function DocPage() {
     if (!window.location.hash) window.scrollTo({ top: 0 });
   }, [path]);
 
-  if (error) {
-    const notFound = error instanceof ApiError && error.status === 404;
+  useEffect(() => {
+    if (moved) navigate(href(moved.path) + window.location.hash, { replace: true });
+  }, [moved, navigate, href]);
+
+  const checkingRedirect = notFound && !moved && !redirectError;
+  if (error && !checkingRedirect) {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-32 text-center">
         <FileQuestion className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
@@ -74,7 +81,7 @@ export default function DocPage() {
     );
   }
 
-  if (isLoading || !page) {
+  if (isLoading || checkingRedirect || !page) {
     return (
       <div className="mx-auto max-w-3xl space-y-5 px-2 py-10">
         <Skeleton className="h-5 w-48 rounded-full" />

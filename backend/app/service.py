@@ -49,6 +49,23 @@ class DocsService:
         page["content"] = self.storage.get_content(page["id"])
         return page
 
+    def resolve_redirect(self, path: str, *, include_drafts: bool) -> str:
+        """Endereço atual de uma página que já esteve em `path` (renomeada ou movida)."""
+        page_id = self.storage.get_redirect(path.strip("/"))
+        if not page_id:
+            raise not_found()
+        return self._find(page_id=page_id, include_drafts=include_drafts)["path"]
+
+    def _paths(self) -> dict[str, str]:
+        return {node["id"]: node["path"] for node, _ in flatten(self.tree(include_drafts=True))}
+
+    def _remember_moved(self, before: dict[str, str]) -> None:
+        """Grava um redirecionamento para cada página (e subpágina) cujo endereço mudou."""
+        after = self._paths()
+        for page_id, old_path in before.items():
+            if after.get(page_id) not in (None, old_path):
+                self.storage.put_redirect(old_path, page_id)
+
     def search(self, query: str, *, include_drafts: bool, limit: int = 20) -> list[dict]:
         # sem acentos dos dois lados: "autenticacao" encontra "Autenticação"
         terms = [t for t in re.split(r"\s+", fold(query).strip()) if t]
@@ -153,6 +170,7 @@ class DocsService:
             raise _conflict()
 
         fields = data.model_dump(exclude_unset=True, exclude={"version", "content"})
+        before = self._paths() if "slug" in fields else None
         if fields.get("title"):
             fields["title"] = fields["title"].strip()
         if "slug" in fields:
@@ -174,6 +192,8 @@ class DocsService:
             raise _conflict() from None
         if data.content is not None:
             self.storage.put_content(page_id, data.content, author, version=expected + 1, note=note)
+        if before is not None:
+            self._remember_moved(before)
         return self.get_page(page_id, include_drafts=True)
 
     def move_page(self, page_id: str, parent_id: str | None, index: int, author: str) -> list[dict]:
@@ -199,8 +219,10 @@ class DocsService:
             if sibling.get("order") != order or sibling["id"] == page_id:
                 changes.setdefault(sibling["id"], {})["order"] = order
         changes[page_id].update(updated_at=utcnow(), updated_by=author)
+        before = self._paths()
         for target_id, fields in changes.items():
             self.storage.update_page(target_id, fields)
+        self._remember_moved(before)
         return self.tree(include_drafts=True)
 
     def delete_page(self, page_id: str) -> int:

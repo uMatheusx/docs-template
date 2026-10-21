@@ -249,6 +249,17 @@ class Storage:
         self.invalidate()
 
     # ------------------------------------------------------------------ revisões
+    # ------------------------------------------------------------------ redirecionamentos
+    # endereço antigo -> id da página (não o endereço novo): mudanças seguintes não criam cadeias
+    def put_redirect(self, old_path: str, page_id: str) -> None:
+        self.table.put_item(
+            Item={"id": f"redirect:{old_path}", "record": "redirect", "page_id": page_id, "created_at": utcnow()}
+        )
+
+    def get_redirect(self, old_path: str) -> str | None:
+        item = self.table.get_item(Key={"id": f"redirect:{old_path}"}).get("Item")
+        return item["page_id"] if item and item.get("record") == "redirect" else None
+
     def put_review(self, item: dict) -> None:
         self.table.put_item(Item={**item, "record": "review"})
 
