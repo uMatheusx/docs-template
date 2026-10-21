@@ -9,6 +9,7 @@ import type { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
 import { asyncChannels, isObj, listOperations, parseSpec, str, type Obj } from "@/components/api/spec";
+import { SPEC_HINT } from "@/lib/spec-hint";
 import { api, fetchText, isAssetRef, keys, type Asset, type Page } from "@/lib/api";
 import { CALLOUT_TYPES, MERMAID_SNIPPETS, TABLE_SNIPPET } from "@/lib/snippets";
 
@@ -38,6 +39,25 @@ export function setSlashAssets(assets: Asset[]) {
 }
 
 const KIND_LABEL: Record<SpecKind, string> = { openapi: "OpenAPI", asyncapi: "AsyncAPI" };
+
+/** Chaves que um bloco de referência aceita, além de `ref:`. */
+const SPEC_KEYS: Record<SpecKind, { key: string; detail: string; info: string }[]> = {
+  openapi: [
+    {
+      key: "operations",
+      detail: "só algumas operações",
+      info: 'Lista de operações a mostrar: "POST /accounts" ou o operationId. Sem esta chave (e sem tags), o contrato aparece inteiro.',
+    },
+    { key: "tags", detail: "só algumas tags", info: "Lista de tags: mostra todas as operações de cada tag." },
+  ],
+  asyncapi: [
+    {
+      key: "channels",
+      detail: "só alguns canais",
+      info: "Lista de canais a mostrar, pelo id ou pelo endereço. Sem esta chave, o contrato aparece inteiro.",
+    },
+  ],
+};
 
 /** De onde vem uma especificação: uma página ou um contrato enviado em Arquivos. */
 interface SpecSource {
@@ -158,7 +178,7 @@ function applyFile(asset: Asset) {
 function applySpecBlock(source: SpecSource, kind: SpecKind) {
   return (view: EditorView, _completion: Completion, from: number, to: number) => {
     const start = from - 1;
-    const text = `\`\`\`${kind}\nref: ${source.ref}\n\`\`\`\n`;
+    const text = `\`\`\`${kind}\nref: ${source.ref}\n${SPEC_HINT[kind]}\n\`\`\`\n`;
     mode = null;
     view.dispatch({ changes: { from: start, to, insert: text }, selection: { anchor: start + text.length } });
   };
@@ -348,6 +368,44 @@ function specFenceSource(context: CompletionContext) {
   if (!fence) return null;
   const line = context.state.doc.lineAt(context.pos);
   const before = context.state.sliceDoc(line.from, context.pos);
+
+  // início de linha: sugere as chaves que o bloco aceita e ainda não foram usadas
+  const keyMatch = /^([a-z]*)$/.exec(before);
+  if (keyMatch && (keyMatch[1] || context.explicit)) {
+    let end = context.state.doc.lines;
+    for (let n = fence.openLine + 1; n <= context.state.doc.lines; n++) {
+      if (/^\s*```/.test(context.state.doc.line(n).text)) {
+        end = n - 1;
+        break;
+      }
+    }
+    const used = new Set<string>();
+    for (let n = fence.openLine + 1; n <= end; n++) {
+      const found = /^([\w-]+):/.exec(context.state.doc.line(n).text);
+      if (found) used.add(found[1]);
+    }
+    const options = [
+      ...(used.has("ref") ? [] : [{ key: "ref", detail: "página ou arquivo da especificação", info: "Endereço da especificação: uma página (/docs/…) ou um contrato enviado em Arquivos." }]),
+      ...SPEC_KEYS[fence.kind],
+    ]
+      .filter((k) => !used.has(k.key))
+      .map(
+        (k, i): Completion => ({
+          label: k.key,
+          detail: k.detail,
+          info: k.info,
+          type: "keyword",
+          boost: -i,
+          apply: (view, _completion, from, to) => {
+            const text = k.key === "ref" ? "ref: " : `${k.key}:\n  - `;
+            view.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length } });
+            // já mostra as opções do que vem a seguir (a especificação, ou as operações/tags/canais dela)
+            setTimeout(() => startCompletion(view), 30);
+          },
+        }),
+      );
+    if (options.length > 0) return { from: line.from, validFor: /^[a-z]*$/, options };
+  }
 
   const refMatch = /^(ref:\s*)(\S*)$/.exec(before);
   if (refMatch) {

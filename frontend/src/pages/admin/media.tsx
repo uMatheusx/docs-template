@@ -18,13 +18,14 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Hint } from "@/components/ui/tooltip";
+import { SPEC_HINT } from "@/lib/spec-hint";
 import { docsApi, keys, type Asset } from "@/lib/api";
 import { cn, formatBytes, normalize, timeAgo } from "@/lib/utils";
 
 const isImage = (a: Asset) => /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(a.name);
 const markdownFor = (a: Asset) => `${isImage(a) ? "!" : ""}[${a.name}](${a.url})`;
 /** bloco que incorpora o contrato na página (o editor também oferece pelo "/") */
-const specBlockFor = (a: Asset) => `\`\`\`${a.spec_kind}\nref: ${a.url}\n\`\`\`\n`;
+const specBlockFor = (a: Asset) => `\`\`\`${a.spec_kind}\nref: ${a.url}\n${SPEC_HINT[a.spec_kind!]}\n\`\`\`\n`;
 const SPEC_LABEL = { openapi: "OpenAPI", asyncapi: "AsyncAPI" } as const;
 
 type Filter = "all" | "images" | "specs" | "files";

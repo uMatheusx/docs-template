@@ -58,6 +58,20 @@ test("arquivos: sobe um contrato OpenAPI e um PDF, e referencia o contrato numa 
   await expect(menu).not.toContainText("API REST do Account Hub");
   await accept();
   await expect(editor).toContainText("ref: /api/assets/");
+  await expect(editor).toContainText("# Opcional: use operations ou tags"); // a dica das chaves já vem no bloco
+
+  // quem não conhece as chaves as descobre digitando no início de uma linha do bloco
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("End");
+  await page.keyboard.type("\no");
+  await expect(menu).toContainText("operations");
+  await expect(menu).toContainText("só algumas operações");
+  await expect(menu).not.toContainText("ref"); // já existe no bloco
+  await accept();
+  await expect(menu).toContainText("GET /contratos-e2e"); // e já lista as operações do contrato
+  await accept();
+  await expect(editor).toContainText("- GET /contratos-e2e");
 
   // a prévia mostra a especificação vinda do arquivo
   await page.getByRole("button", { name: "Ler", exact: true }).click();
