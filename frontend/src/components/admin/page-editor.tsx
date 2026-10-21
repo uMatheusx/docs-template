@@ -239,6 +239,8 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const preview = useDeferredValue(draft.content);
   const [reviewOpen, setReviewOpen] = useState(false);
+  // proposta que o usuário quer carregar, esperando a confirmação de que o texto atual pode ser substituído
+  const [confirmLoad, setConfirmLoad] = useState<Review | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
   const { user } = useSession();
   const isAdmin = user?.role === "admin";
@@ -410,6 +412,13 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     } finally {
       setSaving(false);
     }
+  }
+
+  /** Carregar substitui o editor inteiro: só pergunta quando há algo a perder (nem se já é igual à proposta). */
+  function requestLoadProposal(review: Review) {
+    const nothingToLose = !dirty || (persisted?.kind === "proposal" && !unsaved);
+    if (nothingToLose) void loadProposal(review);
+    else setConfirmLoad(review);
   }
 
   async function loadProposal(review: Review) {
@@ -744,7 +753,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 Sua proposta #{myReview.number} “{myReview.title}” está {REVIEW_STATUS[myReview.status].label.toLowerCase()}.
               </span>
               <span className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => loadProposal(myReview)}>
+                <Button size="sm" variant="outline" onClick={() => requestLoadProposal(myReview)}>
                   Carregar no editor
                 </Button>
                 <Button asChild size="sm" variant="ghost">
@@ -935,6 +944,31 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         onOpenChange={setTemplateOpen}
         source={{ title: draft.title, icon: draft.icon, kind, content: draft.content }}
       />
+
+      <AlertDialog open={confirmLoad !== null} onOpenChange={(open) => !open && setConfirmLoad(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Carregar a proposta #{confirmLoad?.number} no editor?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tudo que está no editor agora será substituído pelo conteúdo da proposta.
+              {persisted?.kind === "local" ? " Isso inclui o que você salvou neste navegador." : ""}
+              {unsaved ? " As alterações ainda não salvas serão perdidas." : ""} Isso não pode ser desfeito.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Manter o que está no editor</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const review = confirmLoad;
+                setConfirmLoad(null);
+                if (review) void loadProposal(review);
+              }}
+            >
+              Substituir e carregar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={blocker.state === "blocked"}>
         <AlertDialogContent>

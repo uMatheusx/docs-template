@@ -155,6 +155,27 @@ test("proposta carregada no editor não conta como alteração não salva", asyn
   await page.getByRole("button", { name: "Carregar no editor" }).click();
   await appendToEditor(page, " Mais uma frase.");
   await expect(page.getByText(/além da proposta #\d+/)).toBeVisible();
+
+  // carregar de novo com alterações no editor pede confirmação; cancelar mantém o que está lá
+  await page.getByRole("button", { name: "Carregar no editor" }).click();
+  const confirm = page.getByRole("alertdialog");
+  await expect(confirm.getByText(/Tudo que está no editor agora será substituído/)).toBeVisible();
+  await expect(confirm.getByText(/alterações ainda não salvas serão perdidas/)).toBeVisible();
+  await confirm.getByRole("button", { name: "Manter o que está no editor" }).click();
+  await expect(confirm).toBeHidden();
+  await expect(page.getByText(/além da proposta #\d+/)).toBeVisible();
+
+  // confirmar substitui pelo conteúdo da proposta
+  await page.getByRole("button", { name: "Carregar no editor" }).click();
+  await confirm.getByRole("button", { name: "Substituir e carregar" }).click();
+  await expect(page.getByText(/Proposta #\d+ carregada/)).toBeVisible();
+  await expect(page.getByText("Mais uma frase.")).toHaveCount(0);
+
+  // sem nada a perder (já é a proposta), carregar não pergunta nada
+  await page.getByRole("button", { name: "Carregar no editor" }).click();
+  await expect(confirm).toHaveCount(0);
+
+  await appendToEditor(page, " Terceira frase.");
   await page.getByRole("link", { name: "Visão geral" }).click();
   await expect(page.getByRole("alertdialog")).toBeVisible();
   await page.getByRole("button", { name: "Sair mesmo assim" }).click();
