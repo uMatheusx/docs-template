@@ -77,3 +77,14 @@ def test_restoring_a_version_of_a_draft_still_works(admin):
     old = next(h for h in history if h.get("version") == 1)
     restored = admin.post(f"/api/admin/pages/{draft['id']}/history/{old['id']}/restore")
     assert restored.status_code == 200
+
+
+def test_published_page_goes_back_to_draft_only_by_review(admin):
+    faq = faq_of(admin)
+    direct = admin.put(f"/api/admin/pages/{faq['id']}", json={"published": False, "version": faq["version"]})
+    assert direct.status_code == 403
+
+    page = apply_change(admin, faq["id"], fields={"published": False})
+    assert page["published"] is False
+    admin.cookies.clear()
+    assert admin.get("/api/pages/by-path", params={"path": "faq"}).status_code == 404  # leitor não vê mais

@@ -116,7 +116,7 @@ Sem filtro, a referência inteira é exibida. O trecho acompanha a especificaç�
 **Fluxo de revisão**
 - Papéis: `admin` faz tudo; `editor` cria rascunhos e propõe mudanças. Usuários extras em `USERS=nome:senha:papel,...`
 - **Toda mudança em página publicada passa por revisão, para qualquer papel (inclusive admin)**: o editor mostra "Enviar para revisão" no lugar de "Salvar" e a gravação direta é recusada pela API. A descrição ("o que mudou e por quê") é obrigatória
-- Páginas novas nascem sempre como rascunho, que se edita direto; para publicar, "Pedir publicação" abre a proposta. Em página publicada, "Restaurar versão" carrega a versão no editor e segue pelo mesmo caminho
+- Páginas novas nascem sempre como rascunho, que se edita direto; para publicar, "Pedir publicação" abre a proposta. Para voltar uma página publicada a rascunho, desligue o interruptor "Publicada" no editor e envie para revisão (a página só sai do ar quando a proposta for aplicada). Em página publicada, "Restaurar versão" carrega a versão no editor e segue pelo mesmo caminho
 - Um admin comenta, **aprova** ou **pede alterações** e então **aplica** — a página ganha uma nova versão com o autor da proposta. Admin pode aprovar a própria proposta
 - Diff da proposta contra a versão atual, prévia renderizada, aviso quando a página mudou desde a proposta (aplicar mesmo assim é explícito)
 - Badge de revisões abertas no rail e no painel. `REVIEW_SELF_APPROVAL=false` volta a exigir que outro admin aprove (padrão: `true`)

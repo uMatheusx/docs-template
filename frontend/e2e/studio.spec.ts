@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { appendToEditor, approveAndApply, findPage, loginAs, unique } from "./fixtures";
+import { appendToEditor, approveAndApply, changeViaReview, findPage, loginAs, unique } from "./fixtures";
 
 test("admin cria um rascunho, pede publicação com descrição, aprova a própria proposta e o leitor vê", async ({ page }) => {
   const id = unique();
@@ -90,4 +90,34 @@ test("editora propõe uma mudança, o admin aprova e aplica", async ({ page }) =
   await page.context().clearCookies();
   await page.goto("/docs/faq");
   await expect(page.getByText(marker)).toBeVisible();
+});
+
+test("voltar uma página publicada para rascunho também passa por revisão", async ({ page }) => {
+  const id = unique();
+  const title = `Provisória ${id}`;
+  await loginAs(page, "admin");
+  const created = await (await page.request.post("/api/admin/pages", { data: { title, content: `# ${title}
+
+Texto.` } })).json();
+  await changeViaReview(page.request, created.id, { fields: { published: true } });
+
+  await page.goto(`/admin/pages/${created.id}`);
+  await page.getByRole("switch").first().click(); // Publicada -> Rascunho
+  await page.getByRole("button", { name: "Enviar para revisão" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Altera publicação")).toBeVisible();
+  await dialog.getByLabel(/O que mudou e por quê/).fill("Tirando do ar até revisar o texto.");
+  await dialog.getByRole("button", { name: "Enviar proposta" }).click();
+  await expect(dialog).toBeHidden();
+
+  // ainda publicada até a proposta ser aplicada
+  await page.context().clearCookies();
+  await page.goto(`/docs/${created.slug}`);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
+
+  await loginAs(page, "admin");
+  await approveAndApply(page, `Atualiza ${title}`);
+  await page.context().clearCookies();
+  await page.goto(`/docs/${created.slug}`);
+  await expect(page.getByRole("heading", { name: "Página não encontrada" })).toBeVisible();
 });

@@ -208,9 +208,9 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const specJson = isSpec && isJsonText(draft.content);
   // ninguém altera páginas publicadas diretamente: as mudanças viram propostas de revisão (com descrição)
   const reviewOnly = baseline.published;
-  const publishLock = baseline.published
-    ? "Alterações passam por revisão antes de publicar"
-    : "Para publicar, envie para revisão pedindo a publicação";
+  // rascunho: só se publica pedindo publicação. Publicada: desligar é uma mudança como as outras (vai para revisão)
+  const publishLock = baseline.published ? undefined : "Para publicar, envie para revisão pedindo a publicação";
+  const unpublishNote = "Volta a rascunho quando a proposta for aprovada e aplicada";
   const { data: pageReviews, mutate: refreshReviews } = useSWR<Review[]>(keys.reviews("active", baseline.id));
   const myReview = pageReviews?.find((r) => r.author === user?.username);
   const otherReviews = pageReviews?.filter((r) => r !== myReview) ?? [];
@@ -499,7 +499,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 </button>
               ))}
             </div>
-            <Hint label={publishLock ?? (draft.published ? "Visível para todos os leitores" : "Só quem edita a documentação vê")}>
+            <Hint label={publishLock ?? (draft.published ? "Visível para todos os leitores" : unpublishNote)}>
               <label className="hidden items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs font-bold md:flex">
                 <Switch
                   checked={draft.published}

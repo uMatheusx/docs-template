@@ -162,7 +162,12 @@ export function Inspector({ draft, baseline, onChange, onJump, onOpenHistory, ki
               <span>
                 <span className="block font-bold">{draft.published ? "Publicada" : "Rascunho"}</span>
                 <span className="text-xs text-muted-foreground">
-                  {publishLock ?? (draft.published ? "Visível para todos os leitores" : "Só quem edita a documentação vê")}
+                  {publishLock ??
+                    (draft.published
+                      ? "Visível para todos os leitores"
+                      : baseline.published
+                        ? "Volta a rascunho quando a proposta for aprovada e aplicada"
+                        : "Só quem edita a documentação vê")}
                 </span>
               </span>
               <Switch checked={draft.published} disabled={!!publishLock} onCheckedChange={(v) => onChange("published", v)} />
