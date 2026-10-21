@@ -348,6 +348,7 @@ test("digitar / no editor oferece link para página e lista as páginas conforme
   await page.keyboard.type("autentic");
   await expect(menu).toContainText("Autenticação");
   await expect(menu).not.toContainText("Arquitetura");
+  await page.waitForTimeout(150); // o menu só aceita Enter depois de um instante (evita aceitar sem querer)
   await page.keyboard.press("Enter");
   await expect(editor).toContainText("[Autenticação](/docs/guias/autenticacao)");
 
@@ -360,6 +361,8 @@ test("digitar / no editor oferece link para página e lista as páginas conforme
   await expect(menu).toContainText("Arquitetura");
   await expect(menu).not.toContainText("Alerta");
   await page.keyboard.type("arquitet");
+  await expect(menu).toContainText("Arquitetura");
+  await page.waitForTimeout(150);
   await page.keyboard.press("Enter");
   await expect(editor).toContainText("[Arquitetura](/docs/arquitetura)");
 
@@ -412,4 +415,67 @@ test("referências de API: escolhe a especificação e as sugestões vêm da pr�
   await expect(menu).toContainText("roleBindings");
 
   await page.evaluate((id) => localStorage.removeItem(`ah-draft:${id}`), faq.id);
+});
+
+test("ver o diff local, comparar com o último Salvar e restaurar o último salvo com confirmação", async ({ page }) => {
+  await loginAs(page, "admin");
+  const guia = await findPage(page.request, "guia-de-escrita");
+  await page.goto(`/admin/pages/${guia.id}`);
+  await expect(page.getByRole("button", { name: "Ver alterações" })).toBeDisabled(); // nada mudou ainda
+
+  // antes de salvar: o diff mostra o que mudou em relação à versão publicada
+  await appendToEditor(page, "\n\nLinha nova A.");
+  await page.getByRole("button", { name: "Ver alterações" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("heading", { name: "Alterações no editor" })).toBeVisible();
+  await expect(dialog).toContainText("Comparando com a versão publicada (1.0.0)");
+  await expect(dialog.getByText("Linha nova A.")).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: "Desde o último Salvar" })).toHaveCount(0); // ainda não há último salvo
+  await dialog.getByRole("button", { name: "Fechar" }).last().click(); // o "X" do canto também se chama Fechar
+
+  // salvou; escreveu mais: dá para ver só o que veio depois do Salvar
+  await page.getByRole("button", { name: /^Salvar/ }).click();
+  await appendToEditor(page, "\n\nLinha nova B.");
+  await page.getByRole("button", { name: "Ver alterações" }).click();
+  await expect(dialog.locator('[class*="bg-emerald-500/[0.09]"]').filter({ hasText: "Linha nova A." })).toHaveCount(1);
+  await expect(dialog.locator('[class*="bg-emerald-500/[0.09]"]').filter({ hasText: "Linha nova B." })).toHaveCount(1);
+  await dialog.getByRole("radio", { name: "Desde o último Salvar" }).click();
+  await expect(dialog).toContainText("Comparando com o que você salvou neste navegador");
+  // linhas adicionadas têm fundo verde; a A pode aparecer como contexto, mas não como adição
+  const added = (text: string) => dialog.locator('[class*="bg-emerald-500/[0.09]"]').filter({ hasText: text });
+  await expect(added("Linha nova B.")).toHaveCount(1);
+  await expect(added("Linha nova A.")).toHaveCount(0);
+
+  // restaurar pede confirmação; cancelar mantém o que está no editor
+  await dialog.getByRole("button", { name: /Restaurar o último salvo/ }).click();
+  const confirm = page.getByRole("alertdialog");
+  await expect(confirm.getByText(/serão perdidas/)).toBeVisible();
+  await confirm.getByRole("button", { name: "Manter o que está no editor" }).click();
+  await expect(page.locator(".cm-content")).toContainText("Linha nova B.");
+
+  // confirmar volta ao último salvo: a B some e a A fica
+  await page.getByRole("button", { name: "Mais ações" }).click();
+  await page.getByRole("menuitem", { name: /Restaurar o último salvo/ }).click();
+  await confirm.getByRole("button", { name: "Restaurar" }).click();
+  await expect(page.locator(".cm-content")).not.toContainText("Linha nova B.");
+  await expect(page.locator(".cm-content")).toContainText("Linha nova A.");
+  await expect(page.getByText("Salvo neste navegador · não enviado")).toBeVisible();
+  await page.getByRole("button", { name: "Mais ações" }).click();
+  await expect(page.getByRole("menuitem", { name: /Restaurar o último salvo/ })).toBeDisabled(); // nada depois do Salvar
+  await page.keyboard.press("Escape");
+
+  // antes de enviar para revisão: "Ver alterações" dentro do próprio formulário
+  await page.getByRole("button", { name: "Enviar para revisão" }).click();
+  const review = page.getByRole("dialog");
+  await review.getByRole("button", { name: "Ver alterações" }).click();
+  await expect(page.getByRole("heading", { name: "Alterações no editor" })).toBeVisible();
+  await expect(page.getByText("Linha nova A.").last()).toBeVisible();
+
+  // limpa: fecha o diff e o formulário, e descarta tudo
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("heading", { name: "Alterações no editor" })).toBeHidden();
+  await review.getByRole("button", { name: "Cancelar" }).click();
+  await page.getByRole("button", { name: "Mais ações" }).click();
+  await page.getByRole("menuitem", { name: /Descartar alterações/ }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Descartar" }).click();
 });

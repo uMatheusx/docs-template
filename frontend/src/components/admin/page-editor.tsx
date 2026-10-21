@@ -24,6 +24,8 @@ import {
   PanelRightOpen,
   PencilLine,
   Save,
+  FileDiff,
+  RotateCcw,
   Trash2,
   Undo2,
 } from "lucide-react";
@@ -40,6 +42,7 @@ import { SLASH_IMAGE_EVENT, setSlashPages, slashCommands } from "@/components/ad
 import { MovePageDialog } from "@/components/admin/move-page-dialog";
 import { ReviewDialog, type ReviewDraft } from "@/components/admin/review-dialog";
 import { SaveTemplateDialog } from "@/components/admin/save-template-dialog";
+import { ChangesDialog } from "@/components/admin/changes-dialog";
 import { VersionHistory } from "@/components/admin/version-history";
 import { clearLocal, readLocal, writeLocal, type LocalDraft } from "@/lib/local-drafts";
 import { flattenTree } from "@/lib/tree";
@@ -232,6 +235,8 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   // proposta que o usuário quer carregar, esperando a confirmação de que o texto atual pode ser substituído
   const [confirmLoad, setConfirmLoad] = useState<Review | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [confirmRestore, setConfirmRestore] = useState(false);
+  const [changesOpen, setChangesOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
   const { user } = useSession();
   const isAdmin = user?.role === "admin";
@@ -658,6 +663,12 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 {draft.published ? "Publicada" : "Rascunho"}
               </label>
             </Hint>
+            <Hint label="Ver alterações em relação à versão publicada">
+              <Button variant="ghost" size="sm" onClick={() => setChangesOpen(true)} aria-label="Ver alterações" disabled={!dirty}>
+                <FileDiff /> <span className="hidden 2xl:inline">Alterações</span>
+                {dirty && <span className="rounded-md bg-muted px-1.5 font-mono text-[10px]">{changed.length}</span>}
+              </Button>
+            </Hint>
             <Hint label="Histórico de versões">
               <Button variant="ghost" size="sm" onClick={() => openHistory()} aria-label="Histórico de versões">
                 <History /> <span className="hidden 2xl:inline">Histórico</span>
@@ -683,6 +694,12 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => openHistory()}>
                   <History /> Histórico de versões
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={!dirty} onSelect={() => setChangesOpen(true)}>
+                  <FileDiff /> Ver alterações
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={!persisted || !unsaved} onSelect={() => setConfirmRestore(true)}>
+                  <RotateCcw /> {persisted?.kind === "proposal" ? `Voltar à proposta #${persisted.number}…` : "Restaurar o último salvo…"}
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled={!dirty} onSelect={() => setConfirmDiscard(true)}>
                   <Undo2 /> Descartar alterações…
@@ -950,6 +967,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         existing={myReview}
         canRequestPublish={!baseline.published}
         currentSemver={baseline.semver}
+        onShowChanges={() => setChangesOpen(true)}
         saving={saving}
         onSubmit={submitReview}
       />
@@ -979,6 +997,61 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
               }}
             >
               Substituir e carregar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <ChangesDialog
+        open={changesOpen}
+        onOpenChange={setChangesOpen}
+        current={draft}
+        published={{
+          label: `Desde a versão publicada (${baseline.semver})`,
+          legend: `Comparando com a versão publicada (${baseline.semver})`,
+          draft: base,
+        }}
+        saved={
+          persisted
+            ? {
+                label: persisted.kind === "proposal" ? `Desde a proposta #${persisted.number}` : "Desde o último Salvar",
+                legend: persisted.kind === "proposal" ? `Comparando com a proposta #${persisted.number} carregada` : "Comparando com o que você salvou neste navegador",
+                draft: persisted.snapshot,
+              }
+            : null
+        }
+        onRestoreSaved={() => {
+          setChangesOpen(false);
+          setConfirmRestore(true);
+        }}
+        onDiscard={() => {
+          setChangesOpen(false);
+          setConfirmDiscard(true);
+        }}
+      />
+
+      <AlertDialog open={confirmRestore} onOpenChange={setConfirmRestore}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {persisted?.kind === "proposal" ? `Voltar à proposta #${persisted.number}?` : "Restaurar o último salvo?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {persisted?.kind === "proposal"
+                ? "O editor volta ao texto da proposta carregada."
+                : "O editor volta ao que você salvou neste navegador."}{" "}
+              As alterações feitas depois ({beyondPersisted.length}) serão perdidas. Isso não pode ser desfeito.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Manter o que está no editor</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (persisted) setDraft(persisted.snapshot);
+                toast.success(persisted?.kind === "proposal" ? "Voltou à proposta" : "Restaurado ao último salvo");
+              }}
+            >
+              Restaurar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

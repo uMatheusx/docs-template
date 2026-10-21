@@ -1,4 +1,4 @@
-import { GitPullRequest, Loader2 } from "lucide-react";
+import { FileDiff, GitPullRequest, Loader2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import type { Draft } from "@/components/admin/inspector";
@@ -42,6 +42,8 @@ interface Props {
   canRequestPublish: boolean;
   /** versão x.y.z que a página tem agora */
   currentSemver: string;
+  /** abre o diff do que está no editor (antes de enviar) */
+  onShowChanges?: () => void;
   saving: boolean;
   onSubmit: (draft: ReviewDraft) => Promise<boolean>;
 }
@@ -49,12 +51,13 @@ interface Props {
 export function ReviewDialog({ open, onOpenChange, ...rest }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>{open && <ReviewForm {...rest} onDone={() => onOpenChange(false)} />}</DialogContent>
+      {/* o formulário cresce com o tamanho da mudança e a versão: em telas baixas ele rola em vez de cortar os botões */}
+      <DialogContent className="max-h-[92vh] overflow-y-auto">{open && <ReviewForm {...rest} onDone={() => onOpenChange(false)} />}</DialogContent>
     </Dialog>
   );
 }
 
-function ReviewForm({ pageTitle, changed, existing, canRequestPublish, currentSemver, saving, onSubmit, onDone }: Omit<Props, "open" | "onOpenChange"> & { onDone: () => void }) {
+function ReviewForm({ pageTitle, changed, existing, canRequestPublish, currentSemver, onShowChanges, saving, onSubmit, onDone }: Omit<Props, "open" | "onOpenChange"> & { onDone: () => void }) {
   // em rascunho, o motivo de abrir uma proposta é publicar: já vem marcado
   const [requestPublish, setRequestPublish] = useState(existing ? !!existing.fields.published : canRequestPublish);
   const nothing = changed.length === 0 && !requestPublish;
@@ -93,6 +96,11 @@ function ReviewForm({ pageTitle, changed, existing, canRequestPublish, currentSe
           A página não muda agora: a proposta precisa ser aprovada e aplicada por um administrador, que pode ser você. Tudo fica registrado em Revisões.
         </DialogDescription>
       </DialogHeader>
+      {onShowChanges && (
+        <Button type="button" variant="outline" size="sm" className="w-fit" onClick={onShowChanges}>
+          <FileDiff /> Ver alterações
+        </Button>
+      )}
       <div className="flex flex-wrap gap-1.5 text-xs">
         {changed.length === 0 ? (
           <span className="rounded-full bg-muted px-2.5 py-1 font-semibold text-muted-foreground">Nenhuma alteração no editor</span>
