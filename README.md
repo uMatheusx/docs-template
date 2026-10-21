@@ -156,7 +156,7 @@ Sem front matter, o título vem do primeiro `# heading` ou do nome do arquivo.
 
 1. Crie a tabela (chave de partição `id` do tipo String, on-demand) e o bucket — ou suba uma vez com `AUTO_CREATE_RESOURCES=true`.
 2. Dê à role do container as permissões de [`deploy/iam-policy.json`](deploy/iam-policy.json).
-3. Rode a imagem com `DYNAMODB_ENDPOINT_URL` e `S3_ENDPOINT_URL` **vazios**, `COOKIE_SECURE=true`, `ADMIN_PASSWORD` e `JWT_SECRET` fortes e `SEED_ON_STARTUP=false`.
+3. Rode a imagem com `DYNAMODB_ENDPOINT_URL` e `S3_ENDPOINT_URL` **vazios**, `COOKIE_SECURE=true`, `APP_ENV=production`, `ADMIN_PASSWORD` e `JWT_SECRET` fortes e `SEED_ON_STARTUP=false`. Com `APP_ENV=production` o backend se recusa a subir com senha ou segredo padrão ou fracos (senhas com menos de 12 caracteres, `JWT_SECRET` com menos de 32).
 
 ```bash
 docker build -t accounthub-docs .

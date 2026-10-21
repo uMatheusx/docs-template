@@ -1,10 +1,16 @@
 import logging
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_JWT_SECRET = "change-me-in-production-please-use-32-chars"
+# valores de exemplo conhecidos (código e .env.example): nunca aceitos em produção
+INSECURE_JWT_SECRETS = {DEFAULT_JWT_SECRET, "troque-este-segredo-por-um-valor-aleatorio-longo"}
+INSECURE_PASSWORDS = {"admin", "password", "senha", "troque-esta-senha", "outra-senha"}
+MIN_JWT_SECRET_LENGTH = 32
+MIN_PASSWORD_LENGTH = 12
 
 
 class Settings(BaseSettings):
@@ -13,6 +19,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     site_name: str = "Account Hub Docs"
+    # "production" recusa subir com credenciais padrão ou fracas; "development" só avisa
+    app_env: Literal["development", "production"] = "development"
 
     # AWS
     aws_region: str = "us-east-1"
@@ -47,9 +55,29 @@ class Settings(BaseSettings):
         return value or None
 
 
+def insecure_settings(settings: Settings) -> list[str]:
+    """Problemas de credenciais que impedem a subida em produção."""
+    problems = []
+    if settings.jwt_secret in INSECURE_JWT_SECRETS or len(settings.jwt_secret) < MIN_JWT_SECRET_LENGTH:
+        problems.append(f"JWT_SECRET padrão ou com menos de {MIN_JWT_SECRET_LENGTH} caracteres")
+    if settings.admin_password in INSECURE_PASSWORDS or len(settings.admin_password) < MIN_PASSWORD_LENGTH:
+        problems.append(f"ADMIN_PASSWORD padrão ou com menos de {MIN_PASSWORD_LENGTH} caracteres")
+    for entry in filter(None, (e.strip() for e in settings.users.split(","))):
+        name, _, rest = entry.partition(":")
+        password = rest.partition(":")[0]
+        if password in (*INSECURE_PASSWORDS, name) or len(password) < MIN_PASSWORD_LENGTH:
+            problems.append(f"senha fraca para o usuário “{name}” em USERS")
+    return problems
+
+
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
-    if settings.jwt_secret == DEFAULT_JWT_SECRET or settings.admin_password == "admin":
-        logging.getLogger(__name__).warning("Usando credenciais padrão: defina ADMIN_PASSWORD e JWT_SECRET!")
+    problems = insecure_settings(settings)
+    if problems and settings.app_env == "production":
+        raise RuntimeError("Credenciais inseguras em produção: " + "; ".join(problems))
+    if problems:
+        logging.getLogger(__name__).warning(
+            "Credenciais inseguras (aceitas só em desenvolvimento): %s", "; ".join(problems)
+        )
     return settings
