@@ -85,5 +85,5 @@ export async function sendFromChanges(page: Page, description: string) {
   await expect(page).toHaveURL(/\/admin\/changes/);
   await page.getByLabel(/O que mudou e por quê/).fill(description);
   await page.getByRole("button", { name: /Enviar para revisão \(1\)/ }).click();
-  await expect(page.getByTestId("change-row").first()).toContainText("Enviada para revisão");
+  await expect(page.getByTestId("change-row").filter({ hasText: "Enviada para revisão" })).toHaveCount(1);
 }

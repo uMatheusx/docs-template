@@ -166,12 +166,14 @@ test("versões x.y.z: rascunho 0.1.0, primeira publicação 1.0.0 e uma novidade
   await page.goto(`/admin/pages/${created.id}`);
   await expect(page.getByRole("button", { name: "Histórico de versões" })).toContainText("0.1.0");
   await page.getByRole("button", { name: "Pedir publicação", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText(/A primeira publicação da página é a versão/)).toBeVisible();
-  await expect(dialog.getByRole("radio", { name: /Novidade/ })).toBeDisabled();
-  await dialog.getByLabel(/O que mudou e por quê/).fill("Primeira publicação.");
-  await dialog.getByRole("button", { name: "Enviar proposta" }).click();
-  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/\/admin\/changes/);
+  const draftRow = page.getByTestId("change-row").filter({ hasText: title });
+  await expect(draftRow).toContainText("0.1.0");
+  await expect(draftRow).toContainText("1.0.0");
+  await expect(draftRow.getByRole("radio")).toHaveCount(0); // a primeira publicação não tem tamanho
+  await page.getByLabel(/O que mudou e por quê/).fill("Primeira publicação.");
+  await page.getByRole("button", { name: /Enviar para revisão \(1\)/ }).click();
+  await expect(draftRow).toContainText("Enviada para revisão");
   await approveAndApply(page, `Atualiza ${title}`);
   expect(await readerFooter()).toContain("versão 1.0.0");
 
@@ -180,11 +182,12 @@ test("versões x.y.z: rascunho 0.1.0, primeira publicação 1.0.0 e uma novidade
   await appendToEditor(page, "\n\nConteúdo novo.");
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await page.getByRole("button", { name: "Enviar para revisão" }).click();
-  await page.getByLabel(/Tamanho da mudança/).selectOption({ label: "Novidade" });
-  await expect(page.getByTestId("change-row")).toContainText("1.1.0");
+  const row = page.getByTestId("change-row").filter({ hasText: title });
+  await row.getByRole("radio", { name: /Novidade/ }).click();
+  await expect(row).toContainText("1.1.0");
   await page.getByLabel(/O que mudou e por quê/).fill("Acrescenta uma seção.");
   await page.getByRole("button", { name: /Enviar para revisão \(1\)/ }).click();
-  await expect(page.getByTestId("change-row")).toContainText("Enviada para revisão");
+  await expect(row).toContainText("Enviada para revisão");
 
   // a revisão mostra o tamanho da mudança e a próxima versão; ao aplicar vira 1.1.0
   await page.goto("/admin/reviews");
@@ -404,7 +407,7 @@ test("ver o diff local, comparar com o último Salvar e restaurar o último salv
 
   // antes de enviar para revisão: "Ver alterações" na própria tela de envio
   await page.getByRole("button", { name: "Enviar para revisão" }).click();
-  await page.getByTestId("change-row").getByRole("button", { name: "Ver alterações" }).click();
+  await page.getByTestId("change-row").filter({ has: page.getByRole("button", { name: "Ver alterações" }) }).first().getByRole("button", { name: "Ver alterações" }).click();
   await expect(page.getByRole("heading", { name: "Alterações no editor" })).toBeVisible();
   await expect(page.getByText("Linha nova A.").last()).toBeVisible();
 
@@ -435,9 +438,8 @@ test("enviar várias páginas de uma vez: cada página salva vira uma proposta",
   // a mesma tela de sempre: abre com a página atual marcada e as outras salvas aparecem para marcar
   await page.getByRole("button", { name: "Enviar para revisão" }).click();
   await expect(page).toHaveURL(/\/admin\/changes/);
-  await expect(page.getByTestId("change-row")).toHaveCount(2);
-  await page.getByRole("checkbox", { name: /Selecionar/ }).first().check();
-  await page.getByRole("checkbox", { name: /Selecionar/ }).last().check();
+  await page.getByRole("checkbox", { name: "Selecionar Guia de escrita" }).check();
+  await page.getByRole("checkbox", { name: "Selecionar Arquitetura" }).check();
   const enviar = page.getByRole("button", { name: /Enviar para revisão \(2\)/ });
   await expect(enviar).toBeDisabled(); // falta a descrição
   await page.getByLabel(/O que mudou e por quê/).fill("Duas páginas juntas.");

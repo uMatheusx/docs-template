@@ -17,19 +17,18 @@ test("admin cria um rascunho, pede publicação com descrição, aprova a própr
 
   // rascunho: salva direto, mas a publicação não pode ser ligada na hora
   await appendToEditor(page, `\nTermo de teste ${id}.`);
-  await expect(page.getByRole("switch").first()).toBeDisabled();
+  await expect(page.getByRole("switch")).toHaveCount(0); // rascunho não tem chave: o estado é só informativo
   await page.getByRole("button", { name: /^Salvar/ }).first().click();
   await expect(page.getByText(/Salvo/).first()).toBeVisible();
 
   // enviar para revisão pedindo a publicação: a descrição é obrigatória
   await page.getByRole("button", { name: "Pedir publicação", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("switch")).toBeChecked(); // já vem pedindo a publicação
-  await dialog.getByRole("button", { name: "Enviar proposta" }).click();
-  await expect(dialog).toBeVisible(); // sem descrição, o formulário não envia
-  await dialog.getByLabel(/O que mudou e por quê/).fill("Primeira versão do glossário.");
-  await dialog.getByRole("button", { name: "Enviar proposta" }).click();
-  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/\/admin\/changes/);
+  const enviar = page.getByRole("button", { name: /Enviar para revisão \(1\)/ });
+  await expect(enviar).toBeDisabled(); // sem descrição, não envia
+  await page.getByLabel(/O que mudou e por quê/).fill("Primeira versão do glossário.");
+  await enviar.click();
+  await expect(page.getByTestId("change-row").filter({ hasText: "Enviada para revisão" })).toHaveCount(1);
 
   // ainda é rascunho: o leitor não vê
   await page.context().clearCookies();
@@ -109,10 +108,11 @@ Texto.` } })).json();
   await page.getByRole("switch").first().click(); // Publicada -> Rascunho
   await page.getByRole("button", { name: /^Salvar/ }).click(); // só se envia o que foi salvo
   await page.getByRole("button", { name: "Enviar para revisão" }).click();
-  await expect(page.getByTestId("change-row")).toContainText("publicação");
+  const row = page.getByTestId("change-row").filter({ hasText: title });
+  await expect(row).toContainText("Altera publicação");
   await page.getByLabel(/O que mudou e por quê/).fill("Tirando do ar até revisar o texto.");
   await page.getByRole("button", { name: /Enviar para revisão \(1\)/ }).click();
-  await expect(page.getByTestId("change-row")).toContainText("Enviada para revisão");
+  await expect(row).toContainText("Enviada para revisão");
 
   // ainda publicada até a proposta ser aplicada
   await page.context().clearCookies();

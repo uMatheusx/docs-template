@@ -158,20 +158,22 @@ export function Inspector({ draft, baseline, onChange, onJump, onOpenHistory, ki
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {tab === "props" && (
           <div className="space-y-5">
-            <label className="flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-muted/50 p-3.5 text-sm">
-              <span>
-                <span className="block font-bold">{draft.published ? "Publicada" : "Rascunho"}</span>
-                <span className="text-xs text-muted-foreground">
-                  {publishLock ??
-                    (draft.published
-                      ? "Visível para todos os leitores"
-                      : baseline.published
-                        ? "Volta a rascunho quando a proposta for aprovada e aplicada"
-                        : "Só quem edita a documentação vê")}
+            {baseline.published ? (
+              <label className="flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-muted/50 p-3.5 text-sm">
+                <span>
+                  <span className="block font-bold">{draft.published ? "Publicada" : "Sairá do ar"}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {draft.published ? "Visível para todos os leitores" : "Volta a rascunho quando a proposta for aprovada e aplicada"}
+                  </span>
                 </span>
-              </span>
-              <Switch checked={draft.published} disabled={!!publishLock} onCheckedChange={(v) => onChange("published", v)} />
-            </label>
+                <Switch checked={draft.published} onCheckedChange={(v) => onChange("published", v)} />
+              </label>
+            ) : (
+              <div className="rounded-2xl border border-border/70 bg-muted/50 p-3.5 text-sm">
+                <span className="block font-bold">Rascunho</span>
+                <span className="text-xs text-muted-foreground">{publishLock ?? "Só quem edita a documentação vê"}</span>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="in-slug">Slug</Label>
               <Input id="in-slug" value={draft.slug} onChange={(e) => onChange("slug", e.target.value)} className="font-mono text-xs" />

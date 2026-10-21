@@ -40,7 +40,6 @@ import { EditorToolbar } from "@/components/admin/editor-toolbar";
 import { Inspector, type Draft } from "@/components/admin/inspector";
 import { SLASH_IMAGE_EVENT, setSlashPages, slashCommands } from "@/components/admin/slash-commands";
 import { MovePageDialog } from "@/components/admin/move-page-dialog";
-import { ReviewDialog, type ReviewDraft } from "@/components/admin/review-dialog";
 import { SaveTemplateDialog } from "@/components/admin/save-template-dialog";
 import { FIELDS, rebaseLocal, toDraft } from "@/lib/draft";
 import { ChangesDialog } from "@/components/admin/changes-dialog";
@@ -78,7 +77,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { useSession } from "@/hooks/use-session";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useTheme } from "@/hooks/use-theme";
-import { ApiError, api, docsApi, keys, type Page, type PageInput, type Review, type ReviewDetail, type ReviewFields } from "@/lib/api";
+import { ApiError, api, docsApi, keys, type Page, type PageInput, type Review, type ReviewDetail } from "@/lib/api";
 import { REVIEW_STATUS } from "@/lib/reviews";
 import { cn, countWords, downloadText, readingTime } from "@/lib/utils";
 import { useAdmin } from "@/pages/admin/admin-layout";
@@ -207,7 +206,6 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const fileInput = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const preview = useDeferredValue(draft.content);
-  const [reviewOpen, setReviewOpen] = useState(false);
   // proposta que o usuário quer carregar, esperando a confirmação de que o texto atual pode ser substituído
   const [confirmLoad, setConfirmLoad] = useState<Review | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -224,7 +222,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   // rascunho: só se publica pedindo publicação. Publicada: desligar é uma mudança como as outras (vai para revisão)
   const publishLock = baseline.published ? undefined : "Para publicar, envie para revisão pedindo a publicação";
   const unpublishNote = "Volta a rascunho quando a proposta for aprovada e aplicada";
-  const { data: pageReviews, mutate: refreshReviews } = useSWR<Review[]>(keys.reviews("active", baseline.id));
+  const { data: pageReviews } = useSWR<Review[]>(keys.reviews("active", baseline.id));
   const myReview = pageReviews?.find((r) => r.author === user?.username);
   const otherReviews = pageReviews?.filter((r) => r !== myReview) ?? [];
 
@@ -365,7 +363,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     }
   }
 
-  /** Só se envia para revisão o que já foi salvo: abre o formulário ou avisa para salvar antes. */
+  /** Só se envia para revisão o que já foi salvo: abre a tela Alterações ou avisa para salvar antes. */
   function openReview() {
     if (unsaved) {
       toast.error("Salve antes de enviar para revisão", {
@@ -373,52 +371,8 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
       });
       return;
     }
-    // página publicada: o envio é sempre pela tela Alterações (uma ou várias páginas, o mesmo formato)
-    if (reviewOnly) navigate(`/admin/changes?select=${baseline.id}`);
-    else setReviewOpen(true);
-  }
-
-  async function submitReview({ title, description, requestPublish, bump }: ReviewDraft) {
-    if (unsaved) {
-      toast.error("Salve antes de enviar para revisão");
-      return false;
-    }
-    const fields: ReviewFields = {};
-    for (const field of changed) if (field !== "content") Object.assign(fields, { [field]: draft[field] });
-    if (requestPublish) fields.published = true;
-    const content = changed.includes("content") ? draft.content : undefined;
-    if (content === undefined && Object.keys(fields).length === 0) {
-      toast.error("Não há alterações para propor");
-      return false;
-    }
-    setSaving(true);
-    try {
-      const review = await docsApi.submitReview(baseline.id, {
-        title,
-        description,
-        content,
-        fields,
-        base_version: origin.version,
-        base_semver: origin.semver,
-        bump,
-      });
-      // a proposta guarda as alterações: o editor volta para a versão publicada
-      clearLocal(baseline.id);
-      reset(baseline);
-      refreshReviews();
-      mutate(keys.stats);
-      mutate((key) => typeof key === "string" && key.startsWith("/api/admin/reviews"));
-      toast.success(`Proposta #${review.number} enviada para revisão`, {
-        description: "Um administrador vai revisar antes de publicar.",
-        action: { label: "Abrir", onClick: () => navigate(`/admin/reviews/${review.id}`) },
-      });
-      return true;
-    } catch (err) {
-      toast.error("Não foi possível enviar a proposta", { description: (err as Error).message });
-      return false;
-    } finally {
-      setSaving(false);
-    }
+    // o envio (de uma ou várias páginas, publicadas ou rascunhos) é sempre pela tela Alterações
+    navigate(`/admin/changes?select=${baseline.id}`);
   }
 
   /** Carregar substitui o editor inteiro: só pergunta quando há algo a perder (nem se já é igual à proposta). */
@@ -615,17 +569,18 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 </button>
               ))}
             </div>
-            <Hint label={publishLock ?? (draft.published ? "Visível para todos os leitores" : unpublishNote)}>
-              <label className="hidden items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs font-bold md:flex">
-                <Switch
-                  checked={draft.published}
-                  disabled={!!publishLock}
-                  onCheckedChange={(v) => set("published", v)}
-                  className="scale-90"
-                />
-                {draft.published ? "Publicada" : "Rascunho"}
-              </label>
-            </Hint>
+            {baseline.published ? (
+              <Hint label={draft.published ? "Visível para todos os leitores" : unpublishNote}>
+                <label className="hidden items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs font-bold md:flex">
+                  <Switch checked={draft.published} onCheckedChange={(v) => set("published", v)} className="scale-90" />
+                  {draft.published ? "Publicada" : "Tirar do ar"}
+                </label>
+              </Hint>
+            ) : (
+              <Hint label={publishLock}>
+                <span className="hidden items-center rounded-xl bg-muted px-2.5 py-1.5 text-xs font-bold text-muted-foreground md:flex">Rascunho</span>
+              </Hint>
+            )}
             <Hint label="Ver alterações em relação à versão publicada">
               <Button variant="ghost" size="sm" onClick={() => setChangesOpen(true)} aria-label="Ver alterações" disabled={!dirty}>
                 <FileDiff /> <span className="hidden 2xl:inline">Alterações</span>
@@ -928,18 +883,6 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         }}
       />
       <MovePageDialog tree={tree} pageId={moving ? baseline.id : null} onOpenChange={setMoving} onMoved={afterMove} />
-      <ReviewDialog
-        open={reviewOpen}
-        onOpenChange={setReviewOpen}
-        pageTitle={baseline.title}
-        changed={changed}
-        existing={myReview}
-        canRequestPublish={!baseline.published}
-        currentSemver={baseline.semver}
-        onShowChanges={() => setChangesOpen(true)}
-        saving={saving}
-        onSubmit={submitReview}
-      />
       <SaveTemplateDialog
         open={templateOpen}
         onOpenChange={setTemplateOpen}
