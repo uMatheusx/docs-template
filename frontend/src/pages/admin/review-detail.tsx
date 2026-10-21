@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 
 import { DiffView } from "@/components/admin/diff-view";
+import { MergeConflicts } from "@/components/admin/merge-conflicts";
 import { ApiReference } from "@/components/api/api-reference";
 import { Markdown } from "@/components/markdown/markdown";
 import {
@@ -34,7 +35,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useSession } from "@/hooks/use-session";
-import { ApiError, docsApi, keys, type ReviewDetail, type ReviewEvent } from "@/lib/api";
+import { ApiError, docsApi, keys, type MergeChoice, type ReviewDetail, type ReviewEvent } from "@/lib/api";
 import { collapseDiff, diffLines, diffStats } from "@/lib/diff";
 import { ACTIVE_STATUSES, describeFields, EVENT_VERB } from "@/lib/reviews";
 import { cn, formatDate, splitLeadingH1, timeAgo } from "@/lib/utils";
@@ -88,12 +89,23 @@ export default function ReviewDetailPage() {
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
+  // escolha do revisor para cada conflito (null = ainda não escolheu); recomeça quando os conflitos mudam
+  const [choices, setChoices] = useState<{ key: string; values: (MergeChoice | null)[] }>({ key: "", values: [] });
+
+  const mergeInfo = review?.merge ?? null;
+  const conflictList = mergeInfo?.state === "conflicts" ? mergeInfo.conflicts : [];
+  const conflictsKey = `${review?.id}:${mergeInfo?.current_version}:${conflictList.length}`;
+  const picked = choices.key === conflictsKey ? choices.values : conflictList.map(() => null);
+  const unresolved = picked.filter((c) => c === null).length;
+  // texto que a página terá depois de aplicar: a mesclagem automática, quando existe
+  const shownContent =
+    mergeInfo?.state === "clean" && mergeInfo.merged_content != null ? mergeInfo.merged_content : review?.proposed_content;
 
   const diff = useMemo(() => {
-    if (!review) return null;
-    const ops = diffLines(review.current_content, review.proposed_content);
+    if (!review || shownContent === undefined) return null;
+    const ops = diffLines(review.current_content, shownContent);
     return { hunks: collapseDiff(ops), stats: diffStats(ops) };
-  }, [review]);
+  }, [review, shownContent]);
 
   if (error) {
     return (
@@ -155,9 +167,23 @@ export default function ReviewDetailPage() {
   const approve = async () => {
     if (await run("approve", () => docsApi.approveReview(review.id, comment.trim()), "Proposta aprovada")) setComment("");
   };
-  const merge = (force = false) => run("merge", () => docsApi.mergeReview(review.id, force), "Proposta aplicada na página");
+  const merge = (force = false) =>
+    run(
+      "merge",
+      () =>
+        docsApi.mergeReview(review.id, {
+          force,
+          resolutions: conflictList.length > 0 && !force ? (picked as MergeChoice[]) : undefined,
+        }),
+      mergeInfo?.state === "clean"
+        ? "Proposta aplicada, combinada com as mudanças da página"
+        : conflictList.length > 0 && !force
+          ? "Proposta aplicada com os conflitos resolvidos"
+          : "Proposta aplicada na página",
+    );
 
-  const previewBody = review.page_kind === "doc" ? splitLeadingH1(review.proposed_content).body : "";
+  const previewContent = shownContent ?? review.proposed_content;
+  const previewBody = review.page_kind === "doc" ? splitLeadingH1(previewContent).body : "";
 
   return (
     <div className="mx-auto max-w-[1100px] space-y-6 p-5 lg:p-8">
@@ -209,20 +235,63 @@ export default function ReviewDetailPage() {
               </Button>
             )}
             {isAdmin && review.status === "approved" && (
-              <Button size="sm" disabled={!!busy} onClick={() => merge()}>
-                {busy === "merge" ? <Loader2 className="animate-spin" /> : <GitMerge />} Aplicar na página
+              <Button
+                size="sm"
+                disabled={!!busy || unresolved > 0}
+                title={unresolved > 0 ? `Resolva os ${unresolved} conflito(s) pendente(s) antes de aplicar` : undefined}
+                onClick={() => merge()}
+              >
+                {busy === "merge" ? <Loader2 className="animate-spin" /> : <GitMerge />}{" "}
+                {unresolved > 0 ? `Resolva ${unresolved} conflito(s)` : "Aplicar na página"}
               </Button>
             )}
           </span>
         </div>
       </header>
 
-      {active && outdated && (
+      {active && outdated && mergeInfo?.state === "clean" && (
+        <div className="flex items-start gap-3 rounded-2xl border border-sky-500/40 bg-sky-500/10 p-4 text-sm">
+          <GitMerge className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+          <p>
+            A página mudou desde que a proposta foi aberta (versão {review.base_version} → {review.current_version}), mas as mudanças não se
+            sobrepõem: elas se combinam sozinhas. A aba Alterações mostra o resultado, com o que mudou na página e o que a proposta traz.
+          </p>
+        </div>
+      )}
+      {active && outdated && mergeInfo?.state === "conflicts" && (
+        <>
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <p>
+              A página mudou desde que a proposta foi aberta (versão {review.base_version} → {review.current_version}) e{" "}
+              {conflictList.length === 1 ? "1 trecho foi mudado" : `${conflictList.length} trechos foram mudados`} dos dois lados. O restante
+              se combina sozinho; escolha abaixo o que fica em cada conflito.
+            </p>
+          </div>
+          {isAdmin && review.status === "approved" ? (
+            <MergeConflicts
+              conflicts={conflictList}
+              choices={picked}
+              baseVersion={review.base_version}
+              currentVersion={review.current_version}
+              onChange={(i, value) => {
+                const next = [...picked];
+                next[i] = value;
+                setChoices({ key: conflictsKey, values: next });
+              }}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Depois de aprovada, quem for aplicar escolhe o que fica em cada conflito.</p>
+          )}
+        </>
+      )}
+      {active && outdated && (!mergeInfo || mergeInfo.state === "unavailable") && (
         <div className="flex items-start gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <p>
-            A página mudou desde que a proposta foi aberta (versão {review.base_version} → {review.current_version}). As alterações abaixo
-            comparam com a versão atual; aplicar vai sobrescrever o que mudou nesse meio-tempo.
+            A página mudou desde que a proposta foi aberta (versão {review.base_version} → {review.current_version}) e não foi possível
+            combinar as mudanças automaticamente. As alterações abaixo comparam com a versão atual; aplicar vai sobrescrever o que mudou nesse
+            meio-tempo.
           </p>
         </div>
       )}
@@ -287,7 +356,7 @@ export default function ReviewDetailPage() {
                   ? `Antes de aplicar → v${review.merged_version}`
                   : `Versão ${review.current_version} → proposta`
               }
-              notice={outdated ? "página mudou" : undefined}
+              notice={outdated ? (mergeInfo?.state === "clean" ? "combinada com a página" : "página mudou") : undefined}
             />
           </div>
         </TabsContent>
@@ -297,7 +366,7 @@ export default function ReviewDetailPage() {
             {review.page_kind === "doc" ? (
               <Markdown content={previewBody} />
             ) : (
-              <ApiReference kind={review.page_kind} content={review.proposed_content} />
+              <ApiReference kind={review.page_kind} content={previewContent} />
             )}
           </div>
         </TabsContent>

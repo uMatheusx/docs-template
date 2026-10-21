@@ -253,5 +253,5 @@ function EditorLoader({ id, onDelete }: { id: string; onDelete: () => void }) {
       </div>
     );
   }
-  return <PageEditor page={data} onDelete={onDelete} />;
+  return <PageEditor key={data.id} page={data} onDelete={onDelete} />;
 }

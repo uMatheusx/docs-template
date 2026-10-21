@@ -52,7 +52,14 @@ test("em página publicada nem o admin salva direto: só envia para revisão", a
   await page.goto(`/admin/pages/${faq.id}`);
   await appendToEditor(page, "\n\nTexto que não vai direto.");
 
-  await expect(page.getByRole("button", { name: /^Salvar/ })).toHaveCount(0);
+  // "Salvar" existe, mas é local: não há "Salvar com descrição" (versão no servidor) e nada é gravado na página
+  await expect(page.getByRole("button", { name: "Salvar com descrição" })).toHaveCount(0);
+  await page.getByRole("button", { name: /^Salvar/ }).click();
+  await expect(page.getByText("Salvo neste navegador · não enviado")).toBeVisible();
+  const after = await (await page.request.get(`/api/admin/pages/${faq.id}`)).json();
+  expect(after.version).toBe(faq.version);
+  expect(after.content).not.toContain("Texto que não vai direto.");
+
   await page.getByRole("button", { name: "Enviar para revisão" }).click();
   await expect(page.getByRole("dialog").getByLabel(/O que mudou e por quê/)).toBeVisible();
   await page.keyboard.press("Escape");

@@ -116,9 +116,12 @@ Sem filtro, a referência inteira é exibida. O trecho acompanha a especificaç�
 **Fluxo de revisão**
 - Papéis: `admin` faz tudo; `editor` cria rascunhos e propõe mudanças. Usuários extras em `USERS=nome:senha:papel,...`
 - **Toda mudança em página publicada passa por revisão, para qualquer papel (inclusive admin)**: o editor mostra "Enviar para revisão" no lugar de "Salvar" e a gravação direta é recusada pela API. A descrição ("o que mudou e por quê") é obrigatória
+- Em página publicada, **Salvar** guarda o rascunho só neste navegador (não publica nem envia nada): dá para trocar de página e voltar, e ele reaparece sozinho. **Enviar para revisão** é o passo separado que cria a proposta; o editor lembra em qual versão o rascunho foi feito, para a mesclagem comparar com ela
 - Páginas novas nascem sempre como rascunho, que se edita direto; para publicar, "Pedir publicação" abre a proposta. Para voltar uma página publicada a rascunho, desligue o interruptor "Publicada" no editor e envie para revisão (a página só sai do ar quando a proposta for aplicada). Em página publicada, "Restaurar versão" carrega a versão no editor e segue pelo mesmo caminho
 - Um admin comenta, **aprova** ou **pede alterações** e então **aplica** — a página ganha uma nova versão com o autor da proposta. Admin pode aprovar a própria proposta
-- Diff da proposta contra a versão atual, prévia renderizada, aviso quando a página mudou desde a proposta (aplicar mesmo assim é explícito)
+- Diff da proposta contra a versão atual e prévia renderizada
+- **Página mudou depois da proposta?** O servidor combina as duas mudanças, por linhas, como o `git merge`, a partir do texto da versão em que a proposta se baseou (guardado no histórico). Trechos que só um lado mudou entram sozinhos; trechos mudados dos dois lados viram conflitos que o revisor resolve um a um (manter a página, usar a proposta ou manter os dois). Mudanças em linhas vizinhas, sem uma linha intacta entre elas, contam como conflito. "Aplicar mesmo assim" (proposta inteira por cima) só aparece quando a versão-base não foi encontrada
+- Propostas só de campos (título, slug, ícone, descrição, publicação) se aplicam sem esse passo, e os campos da proposta valem
 - Badge de revisões abertas no rail e no painel. `REVIEW_SELF_APPROVAL=false` volta a exigir que outro admin aprove (padrão: `true`)
 - Mover e excluir páginas continuam sendo ações diretas de admin (a revisão cobre conteúdo, título, slug, ícone, descrição e publicação)
 

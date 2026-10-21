@@ -160,11 +160,32 @@ export interface Review {
   events: ReviewEvent[];
 }
 
+export type MergeChoice = "ours" | "theirs" | "both";
+
+export interface MergeConflict {
+  index: number;
+  before: string;
+  base: string;
+  ours: string;
+  theirs: string;
+  after: string;
+}
+
+/** Situação da proposta frente à página: current (sem mudanças), clean (combina sozinha), conflicts, unavailable. */
+export interface MergeInfo {
+  state: "current" | "clean" | "conflicts" | "unavailable";
+  base_version: number;
+  current_version: number;
+  conflicts: MergeConflict[];
+  merged_content: string | null;
+}
+
 export interface ReviewDetail extends Review {
   proposed_content: string;
   current_content: string;
   current_version: number;
   page_kind: PageKind;
+  merge: MergeInfo | null;
 }
 
 export interface ReviewInput {
@@ -277,8 +298,11 @@ export const docsApi = {
   approveReview: (id: string, body = "") => api<Review>(`/api/admin/reviews/${id}/approve`, { method: "POST", json: { body } }),
   requestChanges: (id: string, body: string) =>
     api<Review>(`/api/admin/reviews/${id}/request-changes`, { method: "POST", json: { body } }),
-  mergeReview: (id: string, force = false) =>
-    api<Review>(`/api/admin/reviews/${id}/merge`, { method: "POST", json: { force } }),
+  mergeReview: (id: string, options: { force?: boolean; resolutions?: MergeChoice[] } = {}) =>
+    api<Review>(`/api/admin/reviews/${id}/merge`, {
+      method: "POST",
+      json: { force: options.force ?? false, resolutions: options.resolutions },
+    }),
   closeReview: (id: string) => api<Review>(`/api/admin/reviews/${id}/close`, { method: "POST" }),
 
   // modelos

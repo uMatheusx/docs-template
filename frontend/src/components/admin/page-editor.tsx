@@ -101,7 +101,19 @@ const toDraft = (p: Page): Draft => ({
 interface LocalDraft {
   draft: Draft;
   savedAt: string;
+  /** versão da página em que o rascunho se baseia (a mesclagem compara com ela ao aplicar a proposta) */
   baseVersion: number;
+  /** campos da página nessa versão: permitem separar o que o usuário mudou do que mudou na página depois */
+  baseDraft?: Draft;
+  /** guardado de propósito, pelo botão Salvar: volta sozinho ao abrir a página */
+  explicit?: boolean;
+}
+
+/** O que já está guardado fora do editor: uma proposta carregada ou um "Salvar" local. */
+interface Persisted {
+  kind: "proposal" | "local";
+  number?: number;
+  snapshot: Draft;
 }
 
 const localKey = (id: string) => `ah-draft:${id}`;
@@ -116,6 +128,21 @@ function readLocalDraft(page: Page): LocalDraft | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Rascunho feito numa versão mais antiga: título, slug, ícone, descrição e publicação que o usuário não
+ * mexeu acompanham a página atual (senão a proposta desfaria mudanças de outras pessoas). O texto fica
+ * como está: quem o combina com o atual é o servidor, ao aplicar, a partir da versão-base.
+ */
+function rebaseLocal(local: LocalDraft, page: Page): Draft {
+  if (!local.baseDraft || local.baseVersion === page.version) return local.draft;
+  const current = toDraft(page);
+  const next = { ...local.draft };
+  for (const field of FIELDS) {
+    if (field !== "content" && local.draft[field] === local.baseDraft[field]) Object.assign(next, { [field]: current[field] });
+  }
+  return next;
 }
 
 function parseFrontmatter(text: string): { meta: Record<string, string>; body: string } {
@@ -174,8 +201,20 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const { resolved } = useTheme();
   const { mutate } = useSWRConfig();
   const [baseline, setBaseline] = useState(page);
-  const [draft, setDraft] = useState<Draft>(() => toDraft(page));
-  const [recovered, setRecovered] = useState<LocalDraft | null>(() => readLocalDraft(page));
+  // rascunho local salvo de propósito (botão Salvar) volta sozinho; o automático pede confirmação (faixa abaixo)
+  const [stored] = useState<LocalDraft | null>(() => readLocalDraft(page));
+  const restored = stored?.explicit ? stored : null;
+  const [draft, setDraft] = useState<Draft>(() => (restored ? rebaseLocal(restored, page) : toDraft(page)));
+  const [recovered, setRecovered] = useState<LocalDraft | null>(restored ? null : stored);
+  // versão (e campos) em que o rascunho se baseia: é com ela que a mesclagem compara ao aplicar a proposta
+  const [origin, setOrigin] = useState<{ version: number; fields: Draft }>(() =>
+    restored
+      ? { version: restored.baseVersion, fields: restored.baseDraft ?? toDraft(page) }
+      : { version: page.version, fields: toDraft(page) },
+  );
+  const [persisted, setPersisted] = useState<Persisted | null>(() =>
+    restored ? { kind: "local", snapshot: rebaseLocal(restored, page) } : null,
+  );
   // mover a página na árvore chega pela prop: sincroniza caminho/pai sem perder o rascunho
   const [syncedPage, setSyncedPage] = useState(page);
   if (page !== syncedPage) {
@@ -200,7 +239,6 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const preview = useDeferredValue(draft.content);
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [loaded, setLoaded] = useState<{ number: number; snapshot: Draft } | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
   const { user } = useSession();
   const isAdmin = user?.role === "admin";
@@ -219,18 +257,38 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const base = toDraft(baseline);
   const changed = FIELDS.filter((f) => draft[f] !== base[f]);
   const dirty = changed.length > 0;
-  // proposta carregada no editor: o que ela guarda já está salvo, então só o que passa disso é "não salvo"
-  const beyondProposal = loaded ? FIELDS.filter((f) => draft[f] !== loaded.snapshot[f]) : [];
-  const unsaved = loaded ? beyondProposal.length > 0 : dirty;
+  // o que já está guardado em outro lugar (proposta carregada ou "Salvar" local) não conta como não salvo
+  const beyondPersisted = persisted ? FIELDS.filter((f) => draft[f] !== persisted.snapshot[f]) : [];
+  const unsaved = persisted ? beyondPersisted.length > 0 : dirty;
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
-  // ------------------------------------------------------------ rascunho local (recuperação)
+  // ------------------------------------------------------------ rascunho local (recuperação e "Salvar")
+  useEffect(() => {
+    if (!restored) return;
+    toast.info("Rascunho local restaurado", {
+      id: "local-draft-restored",
+      description:
+        restored.baseVersion !== page.version
+          ? `Feito sobre a v${restored.baseVersion}; a página está na v${page.version}. As mudanças se combinam quando a proposta for aplicada.`
+          : "As alterações salvas neste navegador voltaram ao editor. Envie para revisão quando estiver pronto.",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só ao abrir a página
+  }, []);
+
   useEffect(() => {
     if (recovered) return;
     const timer = setTimeout(() => {
       try {
-        if (unsaved) {
-          const local: LocalDraft = { draft, savedAt: new Date().toISOString(), baseVersion: baseline.version };
+        // "Salvar" local: guarda enquanto houver diferença para a página; o resto só enquanto não estiver salvo
+        const keep = persisted?.kind === "local" ? dirty : unsaved;
+        if (keep) {
+          const local: LocalDraft = {
+            draft,
+            savedAt: new Date().toISOString(),
+            baseVersion: origin.version,
+            baseDraft: origin.fields,
+            explicit: persisted?.kind === "local" && !unsaved,
+          };
           localStorage.setItem(localKey(baseline.id), JSON.stringify(local));
         } else {
           localStorage.removeItem(localKey(baseline.id));
@@ -240,7 +298,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [draft, unsaved, baseline.id, baseline.version, recovered]);
+  }, [draft, dirty, unsaved, persisted, origin, baseline.id, recovered]);
 
   // ------------------------------------------------------------ salvar
   async function refreshCaches(saved: Page) {
@@ -255,14 +313,37 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   function reset(next: Page) {
     setBaseline(next);
     setDraft(toDraft(next));
-    setLoaded(null);
+    setPersisted(null);
+    setOrigin({ version: next.version, fields: toDraft(next) });
+  }
+
+  /** Páginas publicadas: "Salvar" guarda neste navegador (para trocar de página sem perder nada) e não publica. */
+  function saveLocal() {
+    if (!unsaved) return false;
+    try {
+      const local: LocalDraft = {
+        draft,
+        savedAt: new Date().toISOString(),
+        baseVersion: origin.version,
+        baseDraft: origin.fields,
+        explicit: true,
+      };
+      localStorage.setItem(localKey(baseline.id), JSON.stringify(local));
+    } catch {
+      toast.error("Não foi possível salvar neste navegador", {
+        description: "O armazenamento local está indisponível. Envie para revisão para não perder as alterações.",
+      });
+      return false;
+    }
+    setPersisted({ kind: "local", snapshot: draft });
+    toast.success("Salvo neste navegador", {
+      description: "Pode trocar de página e voltar: as alterações ficam aqui. Nada foi enviado para revisão.",
+    });
+    return true;
   }
 
   async function save(note?: string) {
-    if (reviewOnly) {
-      if (dirty) setReviewOpen(true);
-      return false;
-    }
+    if (reviewOnly) return saveLocal();
     if (!dirty || saving) return false;
     if (!draft.title.trim()) {
       toast.error("O título não pode ficar vazio");
@@ -273,7 +354,8 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     for (const field of changed) Object.assign(input, { [field]: draft[field] });
     try {
       const saved = await docsApi.updatePage(baseline.id, input);
-      setLoaded(null);
+      setPersisted(null);
+      setOrigin({ version: saved.version, fields: toDraft(saved) });
       setBaseline(saved);
       setDraft((d) => ({ ...d, slug: saved.slug }));
       await refreshCaches(saved);
@@ -306,7 +388,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     }
     setSaving(true);
     try {
-      const review = await docsApi.submitReview(baseline.id, { title, description, content, fields, base_version: baseline.version });
+      const review = await docsApi.submitReview(baseline.id, { title, description, content, fields, base_version: origin.version });
       // a proposta guarda as alterações: o editor volta para a versão publicada
       try {
         localStorage.removeItem(localKey(baseline.id));
@@ -344,7 +426,8 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         content: detail.has_content ? detail.proposed_content : baseline.content,
       };
       setDraft(next);
-      setLoaded({ number: review.number, snapshot: next });
+      setPersisted({ kind: "proposal", number: review.number, snapshot: next });
+      setOrigin({ version: detail.base_version, fields: toDraft(baseline) });
       toast.success(`Proposta #${review.number} carregada no editor`, { description: "Envie de novo para atualizar a proposta." });
     } catch (err) {
       toast.error("Não foi possível carregar a proposta", { description: (err as Error).message });
@@ -492,9 +575,9 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
           <SaveState
             saving={saving}
             dirty={unsaved}
-            changed={loaded ? beyondProposal.length : changed.length}
+            changed={persisted ? beyondPersisted.length : changed.length}
             version={baseline.version}
-            proposal={loaded?.number}
+            persisted={persisted ? { kind: persisted.kind, number: persisted.number } : undefined}
           />
 
           <div className="ml-auto flex items-center gap-1.5">
@@ -592,7 +675,14 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 <GitPullRequest /> Pedir publicação
               </Button>
             )}
-            <SaveButton dirty={dirty} saving={saving} onSave={save} reviewOnly={reviewOnly} onReview={() => setReviewOpen(true)} />
+            <SaveButton
+              dirty={dirty}
+              unsaved={unsaved}
+              saving={saving}
+              onSave={save}
+              reviewOnly={reviewOnly}
+              onReview={() => setReviewOpen(true)}
+            />
           </div>
         </div>
         <input
@@ -619,7 +709,14 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 <span className="text-xs text-muted-foreground">(feitas sobre a v{recovered.baseVersion}; a atual é v{baseline.version})</span>
               )}
               <span className="ml-auto flex gap-2">
-                <Button size="sm" onClick={() => (setDraft(recovered.draft), setRecovered(null))}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setDraft(rebaseLocal(recovered, baseline));
+                    setOrigin({ version: recovered.baseVersion, fields: recovered.baseDraft ?? toDraft(baseline) });
+                    setRecovered(null);
+                  }}
+                >
                   Recuperar
                 </Button>
                 <Button
@@ -862,16 +959,17 @@ function SaveState({
   dirty,
   changed,
   version,
-  proposal,
+  persisted,
 }: {
   saving: boolean;
   dirty: boolean;
   changed: number;
   version: number;
-  /** número da proposta carregada no editor, se houver */
-  proposal?: number;
+  /** o que já está guardado fora do editor: uma proposta carregada ou um "Salvar" local */
+  persisted?: { kind: "proposal" | "local"; number?: number };
 }) {
-  const state = saving ? "saving" : dirty ? "dirty" : proposal ? "proposal" : "saved";
+  const proposal = persisted?.kind === "proposal" ? persisted.number : undefined;
+  const state = saving ? "saving" : dirty ? "dirty" : persisted?.kind === "local" ? "local" : proposal ? "proposal" : "saved";
   return (
     <AnimatePresence mode="wait" initial={false}>
       <motion.span
@@ -884,7 +982,7 @@ function SaveState({
           "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold",
           state === "saved" && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
           state === "dirty" && "bg-brand/10 text-brand-ink",
-          state === "proposal" && "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+          (state === "proposal" || state === "local") && "bg-sky-500/10 text-sky-700 dark:text-sky-300",
           state === "saving" && "bg-muted text-muted-foreground",
         )}
       >
@@ -892,15 +990,20 @@ function SaveState({
         {state === "dirty" && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />}
         {state === "saved" && <Check className="h-3 w-3" />}
         {state === "proposal" && <GitPullRequest className="h-3 w-3" />}
+        {state === "local" && <Save className="h-3 w-3" />}
         {state === "saving"
           ? "Salvando…"
           : state === "dirty"
             ? proposal
               ? `${changed} alteração(ões) além da proposta #${proposal}`
-              : `${changed} alteração(ões) não salva(s)`
-            : state === "proposal"
-              ? `Proposta #${proposal} carregada`
-              : `Salvo · v${version}`}
+              : persisted?.kind === "local"
+                ? `${changed} alteração(ões) além do que foi salvo`
+                : `${changed} alteração(ões) não salva(s)`
+            : state === "local"
+              ? "Salvo neste navegador · não enviado"
+              : state === "proposal"
+                ? `Proposta #${proposal} carregada`
+                : `Salvo · v${version}`}
       </motion.span>
     </AnimatePresence>
   );
@@ -909,12 +1012,16 @@ function SaveState({
 /** Salvar rápido (Ctrl+S) ou com uma descrição que aparece no histórico. */
 function SaveButton({
   dirty,
+  unsaved,
   saving,
   onSave,
   reviewOnly,
   onReview,
 }: {
+  /** há diferença para a página */
   dirty: boolean;
+  /** há diferença que ainda não foi guardada em lugar nenhum */
+  unsaved: boolean;
   saving: boolean;
   onSave: (note?: string) => Promise<boolean>;
   reviewOnly: boolean;
@@ -929,10 +1036,17 @@ function SaveButton({
     }
   };
   if (reviewOnly) {
+    // página publicada: salvar é local (para poder sair e voltar); publicar é só pela revisão
     return (
-      <Button onClick={onReview} disabled={!dirty || saving}>
-        {saving ? <Loader2 className="animate-spin" /> : <GitPullRequest />} Enviar para revisão
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button variant="secondary" onClick={() => onSave()} disabled={!unsaved || saving}>
+          <Save /> Salvar
+          <kbd className="ml-0.5 hidden lg:inline-flex">{modKey} S</kbd>
+        </Button>
+        <Button onClick={onReview} disabled={!dirty || saving}>
+          {saving ? <Loader2 className="animate-spin" /> : <GitPullRequest />} Enviar para revisão
+        </Button>
+      </div>
     );
   }
   return (
