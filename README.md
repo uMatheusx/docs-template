@@ -113,6 +113,11 @@ channels: [roleBindings]   # id ou endereço do canal (opcional)
 
 Sem filtro, a referência inteira é exibida. O trecho acompanha a especificação; um `ref:` para página inexistente ou do tipo errado aparece no checklist de links quebrados. Também dá para colar uma especificação inteira dentro do bloco.
 
+**Editor: rascunho local, letras de situação e links**
+- Tudo que você edita é guardado sozinho **neste navegador** (`localStorage`: sobrevive a recarregar, fechar a aba e reabrir; fica só neste navegador). Ao sair da página nada se perde e não há pergunta; ao voltar, o texto reaparece, ainda marcado como não salvo. **Salvar** (local) é o passo que deixa pronto para enviar para revisão; **Descartar alterações…** (menu `⋯`) apaga o que foi guardado. Só se o navegador recusar a gravação (cheio ou bloqueado) o editor volta a perguntar antes de sair
+- Situação de cada página, em letras como no VS Code, com o nome por extenso ao passar o mouse: **P** publicada (verde), **R** rascunho (âmbar), **M** modificada, alterações ainda não salvas (laranja), **S** salva neste navegador, pronta para enviar (azul) e **E** em revisão, há proposta aberta (violeta). A árvore do Studio combina a situação de publicação com o que está pendente (ex.: `P M`)
+- Digite **`/`** no editor: o item **Link para página** mostra só as páginas da documentação e, conforme você digita (`/guia`), elas são filtradas por título ou endereço; Enter insere `[Título](/docs/endereço)`. As páginas também aparecem na lista geral de blocos, abaixo dos comandos. O antigo atalho "Link" virou **Link externo**
+
 **Fluxo de revisão**
 - Papéis: `admin` faz tudo; `editor` cria rascunhos e propõe mudanças. Usuários extras em `USERS=nome:senha:papel,...`
 - **Toda mudança em página publicada passa por revisão, para qualquer papel (inclusive admin)**: o editor mostra "Enviar para revisão" no lugar de "Salvar" e a gravação direta é recusada pela API. A descrição ("o que mudou e por quê") é obrigatória

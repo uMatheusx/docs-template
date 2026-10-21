@@ -326,3 +326,43 @@ test("letras de situação na árvore: P → M → S → E, com o nome por exten
   const reviews = await (await page.request.get(`/api/admin/reviews?state=active&page_id=${arquitetura.id}`)).json();
   for (const r of reviews) await page.request.post(`/api/admin/reviews/${r.id}/close`);
 });
+
+test("digitar / no editor oferece link para página e lista as páginas conforme se digita", async ({ page }) => {
+  await loginAs(page, "admin");
+  const faq = await findPage(page.request, "faq");
+  await page.goto(`/admin/pages/${faq.id}`);
+  const editor = page.locator(".cm-content").first();
+  const menu = page.locator(".cm-tooltip-autocomplete");
+
+  // "/" sozinho: o item "Link para página" e as páginas existentes
+  await editor.click();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n\n/");
+  await expect(menu).toBeVisible();
+  await expect(menu).toContainText("Link para página");
+  await expect(menu).toContainText("Arquitetura");
+  await expect(menu).toContainText("Autenticação");
+  await expect(menu).not.toContainText("Perguntas frequentes"); // a própria página não é oferecida
+
+  // digitar filtra; Enter insere o link markdown com o endereço da página
+  await page.keyboard.type("autentic");
+  await expect(menu).toContainText("Autenticação");
+  await expect(menu).not.toContainText("Arquitetura");
+  await page.keyboard.press("Enter");
+  await expect(editor).toContainText("[Autenticação](/docs/guias/autenticacao)");
+
+  // "Link para página": a lista passa a mostrar só páginas (sem os blocos)
+  await page.keyboard.type("\n\n/link");
+  await expect(menu).toContainText("Link para página");
+  await page.waitForTimeout(150); // o menu só aceita Enter depois de um instante (evita aceitar sem querer)
+  await page.keyboard.press("Enter");
+  await expect(menu).toBeVisible();
+  await expect(menu).toContainText("Arquitetura");
+  await expect(menu).not.toContainText("Alerta");
+  await page.keyboard.type("arquitet");
+  await page.keyboard.press("Enter");
+  await expect(editor).toContainText("[Arquitetura](/docs/arquitetura)");
+
+  // sem salvar: descarta para não deixar rascunho local na página de teste
+  await page.evaluate((id) => localStorage.removeItem(`ah-draft:${id}`), faq.id);
+});

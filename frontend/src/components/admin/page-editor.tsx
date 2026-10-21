@@ -36,12 +36,13 @@ import useSWR, { useSWRConfig } from "swr";
 import { insertText, replaceAll, wrapSelection } from "@/components/admin/editor-commands";
 import { EditorToolbar } from "@/components/admin/editor-toolbar";
 import { Inspector, type Draft } from "@/components/admin/inspector";
-import { SLASH_IMAGE_EVENT, slashCommands } from "@/components/admin/slash-commands";
+import { SLASH_IMAGE_EVENT, setSlashPages, slashCommands } from "@/components/admin/slash-commands";
 import { MovePageDialog } from "@/components/admin/move-page-dialog";
 import { ReviewDialog, type ReviewDraft } from "@/components/admin/review-dialog";
 import { SaveTemplateDialog } from "@/components/admin/save-template-dialog";
 import { VersionHistory } from "@/components/admin/version-history";
 import { clearLocal, readLocal, writeLocal, type LocalDraft } from "@/lib/local-drafts";
+import { flattenTree } from "@/lib/tree";
 import { legacySemver } from "@/lib/semver";
 import { ApiReference } from "@/components/api/api-reference";
 import { Markdown } from "@/components/markdown/markdown";
@@ -245,6 +246,15 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const { data: pageReviews, mutate: refreshReviews } = useSWR<Review[]>(keys.reviews("active", baseline.id));
   const myReview = pageReviews?.find((r) => r.author === user?.username);
   const otherReviews = pageReviews?.filter((r) => r !== myReview) ?? [];
+
+  // páginas que o "/" oferece como link (todas, menos esta)
+  useEffect(() => {
+    setSlashPages(
+      flattenTree(tree)
+        .filter((n) => n.id !== baseline.id)
+        .map((n) => ({ id: n.id, title: n.title, path: n.path, published: n.published })),
+    );
+  }, [tree, baseline.id]);
 
   const base = toDraft(baseline);
   const changed = FIELDS.filter((f) => draft[f] !== base[f]);
