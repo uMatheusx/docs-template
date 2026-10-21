@@ -83,6 +83,8 @@ export interface Asset {
   size: number;
   content_type: string | null;
   last_modified: string;
+  /** contrato OpenAPI/AsyncAPI reconhecido no envio: pode ser referenciado nas páginas */
+  spec_kind: "openapi" | "asyncapi" | null;
 }
 
 export interface Stats {
@@ -308,6 +310,16 @@ export async function api<T>(url: string, { json, headers, ...init }: RequestOpt
 }
 
 export const fetcher = <T>(url: string) => api<T>(url);
+
+/** Texto de um arquivo enviado (ex.: um contrato OpenAPI em yaml). */
+export async function fetchText(url: string): Promise<string> {
+  const res = await fetch(url, { credentials: "same-origin" });
+  if (!res.ok) throw new ApiError(res.status, res.status === 404 ? "Arquivo não encontrado" : res.statusText || `Erro ${res.status}`);
+  return res.text();
+}
+
+/** `ref:` de um bloco de referência que aponta para um arquivo enviado (e não para uma página). */
+export const isAssetRef = (ref: string) => ref.startsWith("/api/assets/");
 
 export const keys = {
   site: "/api/site",

@@ -38,6 +38,7 @@ from ..schemas import (
     User,
 )
 from ..service import DocsService, not_found
+from ..specs import detect_kind
 from ..storage import Storage
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_editor)])
@@ -246,7 +247,14 @@ async def upload_asset(
     settings: Settings = Depends(get_settings),
 ):
     data = await _read_upload(file, settings)
-    return storage.put_asset(data, file.filename or "arquivo", file.content_type or "", user.username)
+    name = file.filename or "arquivo"
+    spec_kind = None
+    if name.lower().endswith((".yaml", ".yml", ".json")):
+        try:
+            spec_kind = detect_kind(data.decode("utf-8"))
+        except UnicodeDecodeError:
+            spec_kind = None
+    return storage.put_asset(data, name, file.content_type or "", user.username, spec_kind)
 
 
 @router.delete(

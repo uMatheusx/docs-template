@@ -54,7 +54,7 @@ const NAV: { to: string; label: string; icon: LucideIcon; end: boolean }[] = [
   { to: "/admin/pages", label: "Studio", icon: PenSquare, end: false },
   { to: "/admin/changes", label: "Alterações", icon: Layers, end: false },
   { to: "/admin/reviews", label: "Revisões", icon: GitPullRequest, end: false },
-  { to: "/admin/media", label: "Mídia", icon: Images, end: true },
+  { to: "/admin/media", label: "Arquivos", icon: Images, end: true },
 ];
 
 function RailButton({ label, children, onClick }: { label: string; children: React.ReactNode; onClick?: () => void }) {
@@ -106,7 +106,7 @@ export default function AdminLayout() {
     { id: "overview", label: "Ir para Visão geral", icon: LayoutGrid, keywords: "dashboard painel", run: () => navigate("/admin") },
     { id: "studio", label: "Ir para o Studio", icon: PenSquare, keywords: "editor páginas", run: () => navigate("/admin/pages") },
     { id: "reviews", label: "Ir para Revisões", icon: GitPullRequest, keywords: "propostas aprovar pull request", run: () => navigate("/admin/reviews") },
-    { id: "media", label: "Ir para Mídia", icon: Images, keywords: "imagens arquivos s3", run: () => navigate("/admin/media") },
+    { id: "media", label: "Ir para Arquivos", icon: Images, keywords: "imagens arquivos s3 mídia contratos openapi asyncapi", run: () => navigate("/admin/media") },
     { id: "docs", label: "Abrir a documentação", icon: BookOpen, run: () => window.open("/docs", "_blank") },
     { id: "theme", label: resolved === "dark" ? "Usar tema claro" : "Usar tema escuro", icon: Moon, run: () => setTheme(resolved === "dark" ? "light" : "dark") },
     { id: "logout", label: "Sair", icon: LogOut, run: signOut },

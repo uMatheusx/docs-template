@@ -9,7 +9,7 @@ import type { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
 import { asyncChannels, isObj, listOperations, parseSpec, str, type Obj } from "@/components/api/spec";
-import { api, keys, type Page } from "@/lib/api";
+import { api, fetchText, isAssetRef, keys, type Asset, type Page } from "@/lib/api";
 import { CALLOUT_TYPES, MERMAID_SNIPPETS, TABLE_SNIPPET } from "@/lib/snippets";
 
 /** Disparado quando o usuário escolhe "/Imagem" — o editor abre o seletor de arquivos. */
@@ -32,8 +32,28 @@ export function setSlashPages(pages: SlashPage[]) {
   slashPages = pages;
 }
 
+let slashAssets: Asset[] = [];
+export function setSlashAssets(assets: Asset[]) {
+  slashAssets = assets;
+}
+
 const KIND_LABEL: Record<SpecKind, string> = { openapi: "OpenAPI", asyncapi: "AsyncAPI" };
-const specPages = (kind: SpecKind) => slashPages.filter((p) => p.kind === kind);
+
+/** De onde vem uma especificação: uma página ou um contrato enviado em Arquivos. */
+interface SpecSource {
+  title: string;
+  /** valor do `ref:` no bloco */
+  ref: string;
+  detail: string;
+}
+const specSources = (kind: SpecKind): SpecSource[] => [
+  ...slashPages
+    .filter((p) => p.kind === kind)
+    .map((p) => ({ title: p.title, ref: `/docs/${p.path}`, detail: `/docs/${p.path}${p.published ? "" : " · rascunho"}` })),
+  ...slashAssets
+    .filter((a) => a.spec_kind === kind)
+    .map((a) => ({ title: a.name, ref: a.url, detail: `arquivo · ${KIND_LABEL[kind]}` })),
+];
 
 interface SlashItem {
   label: string;
@@ -42,7 +62,7 @@ interface SlashItem {
   insert?: string;
   /** posição do cursor dentro do texto inserido (padrão: fim) */
   caret?: number;
-  action?: "image" | "pages" | SpecKind;
+  action?: "image" | "pages" | "files" | SpecKind;
 }
 
 const ITEMS: SlashItem[] = [
@@ -51,6 +71,12 @@ const ITEMS: SlashItem[] = [
     detail: "buscar",
     info: "Lista as páginas da documentação; escolha uma para inserir o link.",
     action: "pages",
+  },
+  {
+    label: "Link para arquivo",
+    detail: "buscar",
+    info: "Lista os arquivos enviados em Arquivos (contratos, PDFs, planilhas…); escolha um para inserir o link.",
+    action: "files",
   },
   { label: "Título 2", detail: "##", insert: "## " },
   { label: "Título 3", detail: "###", insert: "### " },
@@ -93,7 +119,7 @@ const ITEMS: SlashItem[] = [
 ];
 
 // "Link para página" e "Referência …" deixam só as páginas certas na lista, até ela fechar
-type Mode = "pages" | SpecKind | null;
+type Mode = "pages" | "files" | SpecKind | null;
 let mode: Mode = null;
 let startingMode = false;
 const resetMode = EditorView.updateListener.of((update) => {
@@ -118,11 +144,21 @@ function applyPage(page: SlashPage) {
   };
 }
 
-/** Insere o bloco de referência já apontando para a especificação escolhida. */
-function applySpecBlock(page: SlashPage, kind: SpecKind) {
+function applyFile(asset: Asset) {
   return (view: EditorView, _completion: Completion, from: number, to: number) => {
     const start = from - 1;
-    const text = `\`\`\`${kind}\nref: /docs/${page.path}\n\`\`\`\n`;
+    const image = /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(asset.name);
+    const text = `${image ? "!" : ""}[${asset.name}](${asset.url})`;
+    mode = null;
+    view.dispatch({ changes: { from: start, to, insert: text }, selection: { anchor: start + text.length } });
+  };
+}
+
+/** Insere o bloco de referência já apontando para a especificação escolhida. */
+function applySpecBlock(source: SpecSource, kind: SpecKind) {
+  return (view: EditorView, _completion: Completion, from: number, to: number) => {
+    const start = from - 1;
+    const text = `\`\`\`${kind}\nref: ${source.ref}\n\`\`\`\n`;
     mode = null;
     view.dispatch({ changes: { from: start, to, insert: text }, selection: { anchor: start + text.length } });
   };
@@ -137,7 +173,8 @@ function apply(item: SlashItem) {
       return;
     }
     if (item.action === "pages") return startMode(view, "pages", start, to);
-    if ((item.action === "openapi" || item.action === "asyncapi") && specPages(item.action).length > 0) {
+    if (item.action === "files" && slashAssets.length > 0) return startMode(view, "files", start, to);
+    if ((item.action === "openapi" || item.action === "asyncapi") && specSources(item.action).length > 0) {
       return startMode(view, item.action, start, to);
     }
     const text = item.insert ?? "";
@@ -177,10 +214,34 @@ function slashSource(context: CompletionContext) {
     return {
       from,
       validFor,
-      options: specPages(kind).map((page, i) => ({
-        ...pageCompletion(page, i, 0, applySpecBlock(page, kind)),
-        section: { name: `Especificações ${KIND_LABEL[kind]}`, rank: 0 },
-      })),
+      options: specSources(kind).map(
+        (source, i): Completion => ({
+          label: `${source.title} ${source.ref}`,
+          displayLabel: source.title,
+          detail: source.detail,
+          type: "text",
+          boost: -i,
+          apply: applySpecBlock(source, kind),
+          section: { name: `Especificações ${KIND_LABEL[kind]}`, rank: 0 },
+        }),
+      ),
+    };
+  }
+
+  if (mode === "files") {
+    return {
+      from,
+      validFor,
+      options: slashAssets.map(
+        (asset, i): Completion => ({
+          label: asset.name,
+          detail: asset.spec_kind ? `${KIND_LABEL[asset.spec_kind]} · ${(asset.size / 1024).toFixed(0)} KB` : `${(asset.size / 1024).toFixed(0)} KB`,
+          type: "text",
+          boost: -i,
+          apply: applyFile(asset),
+          section: { name: "Arquivos", rank: 0 },
+        }),
+      ),
     };
   }
 
@@ -196,9 +257,11 @@ function slashSource(context: CompletionContext) {
       detail:
         item.action === "pages"
           ? `${slashPages.length} páginas`
-          : item.action === "openapi" || item.action === "asyncapi"
-            ? `${specPages(item.action).length} ${specPages(item.action).length === 1 ? "especificação" : "especificações"}`
-            : item.detail,
+          : item.action === "files"
+            ? `${slashAssets.length} ${slashAssets.length === 1 ? "arquivo" : "arquivos"}`
+            : item.action === "openapi" || item.action === "asyncapi"
+              ? `${specSources(item.action).length} ${specSources(item.action).length === 1 ? "especificação" : "especificações"}`
+              : item.detail,
       info: item.info,
       section: { name: "Blocos", rank: 0 },
       boost: -i,
@@ -246,11 +309,13 @@ const SPEC_TTL = 20_000;
 /** Operações, tags e canais da especificação (lidos da página; guardados por alguns segundos). */
 function loadSpec(ref: string): Promise<SpecInfo | null> {
   const path = ref.replace(/^\/?docs\//, "").replace(/^\/+|\/+$/g, "");
-  const cached = specCache.get(path);
+  const cacheKey = isAssetRef(ref) ? ref : path;
+  const cached = specCache.get(cacheKey);
   if (cached && Date.now() - cached.at < SPEC_TTL) return cached.value;
-  const value = api<Page>(keys.pageByPath(path))
-    .then((page): SpecInfo | null => {
-      const { spec } = parseSpec(page.content);
+  const source = isAssetRef(ref) ? fetchText(ref) : api<Page>(keys.pageByPath(path)).then((page) => page.content);
+  const value = source
+    .then((content): SpecInfo | null => {
+      const { spec } = parseSpec(content);
       if (!spec) return null;
       const ops = "paths" in spec ? listOperations(spec) : [];
       const tagNames = new Set<string>(ops.flatMap((op) => op.tags));
@@ -273,7 +338,7 @@ function loadSpec(ref: string): Promise<SpecInfo | null> {
       };
     })
     .catch(() => null);
-  specCache.set(path, { at: Date.now(), value });
+  specCache.set(cacheKey, { at: Date.now(), value });
   return value;
 }
 
@@ -289,10 +354,10 @@ function specFenceSource(context: CompletionContext) {
     return {
       from: line.from + refMatch[1].length,
       validFor: /^\S*$/,
-      options: specPages(fence.kind).map(
-        (page, i): Completion => ({
-          label: `/docs/${page.path}`,
-          detail: page.title,
+      options: specSources(fence.kind).map(
+        (source, i): Completion => ({
+          label: source.ref,
+          detail: source.title,
           type: "text",
           boost: -i,
         }),

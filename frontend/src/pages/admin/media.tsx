@@ -1,4 +1,4 @@
-import { Copy, ExternalLink, File, Images, Link2, Loader2, Search, Trash2, UploadCloud } from "lucide-react";
+import { Braces, Copy, ExternalLink, File, FileText, Images, Link2, Loader2, Search, Trash2, UploadCloud, Webhook } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
@@ -19,10 +19,79 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Skeleton } from "@/components/ui/skeleton";
 import { Hint } from "@/components/ui/tooltip";
 import { docsApi, keys, type Asset } from "@/lib/api";
-import { formatBytes, normalize, timeAgo } from "@/lib/utils";
+import { cn, formatBytes, normalize, timeAgo } from "@/lib/utils";
 
 const isImage = (a: Asset) => /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(a.name);
 const markdownFor = (a: Asset) => `${isImage(a) ? "!" : ""}[${a.name}](${a.url})`;
+/** bloco que incorpora o contrato na página (o editor também oferece pelo "/") */
+const specBlockFor = (a: Asset) => `\`\`\`${a.spec_kind}\nref: ${a.url}\n\`\`\`\n`;
+const SPEC_LABEL = { openapi: "OpenAPI", asyncapi: "AsyncAPI" } as const;
+
+type Filter = "all" | "images" | "specs" | "files";
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: "all", label: "Todos" },
+  { id: "images", label: "Imagens" },
+  { id: "specs", label: "Contratos de API" },
+  { id: "files", label: "Outros arquivos" },
+];
+const groupOf = (a: Asset): Exclude<Filter, "all"> => (isImage(a) ? "images" : a.spec_kind ? "specs" : "files");
+
+function FileRow({
+  asset,
+  onCopy,
+  onDelete,
+}: {
+  asset: Asset;
+  onCopy: (text: string, label: string) => void;
+  onDelete: (a: Asset) => void;
+}) {
+  const Icon =
+    asset.spec_kind === "asyncapi" ? Webhook : asset.spec_kind ? Braces : /\.(pdf|docx?|txt|md|csv|xlsx?)$/i.test(asset.name) ? FileText : File;
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3" data-testid="file-row">
+      <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", asset.spec_kind ? "brand-tile" : "bg-muted text-muted-foreground")}>
+        <Icon className="h-[18px] w-[18px]" />
+      </span>
+      <div className="min-w-0 flex-1 basis-48">
+        <p className="flex items-center gap-2">
+          <span className="truncate text-sm font-semibold" title={asset.name}>
+            {asset.name}
+          </span>
+          {asset.spec_kind && (
+            <span className="shrink-0 rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-bold text-brand-ink">{SPEC_LABEL[asset.spec_kind]}</span>
+          )}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {formatBytes(asset.size)} · enviado {timeAgo(asset.last_modified)}
+        </p>
+      </div>
+      <div className="flex items-center gap-1">
+        {asset.spec_kind && (
+          <Button variant="outline" size="sm" onClick={() => onCopy(specBlockFor(asset), "Bloco de referência copiado")}>
+            <Copy /> Copiar referência
+          </Button>
+        )}
+        <Hint label="Copiar link em markdown">
+          <Button size="icon-sm" variant="ghost" aria-label={`Copiar link de ${asset.name}`} onClick={() => onCopy(markdownFor(asset), "Link copiado")}>
+            <Link2 />
+          </Button>
+        </Hint>
+        <Hint label="Abrir ou baixar">
+          <Button size="icon-sm" variant="ghost" asChild>
+            <a href={asset.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${asset.name}`}>
+              <ExternalLink />
+            </a>
+          </Button>
+        </Hint>
+        <Hint label="Excluir">
+          <Button size="icon-sm" variant="ghost" className="text-destructive" aria-label={`Excluir ${asset.name}`} onClick={() => onDelete(asset)}>
+            <Trash2 />
+          </Button>
+        </Hint>
+      </div>
+    </li>
+  );
+}
 
 export default function AdminMedia() {
   const { data: assets, isLoading, mutate } = useSWR<Asset[]>(keys.assets);
@@ -30,10 +99,16 @@ export default function AdminMedia() {
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(0);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
   const [preview, setPreview] = useState<Asset>();
   const [toDelete, setToDelete] = useState<Asset>();
 
-  const visible = (assets ?? []).filter((a) => normalize(a.name).includes(normalize(query)));
+  const matching = (assets ?? []).filter((a) => normalize(a.name).includes(normalize(query)));
+  const count = (f: Filter) => (assets ?? []).filter((a) => f === "all" || groupOf(a) === f).length;
+  const visible = matching.filter((a) => filter === "all" || groupOf(a) === filter);
+  const images = visible.filter((a) => groupOf(a) === "images");
+  const specs = visible.filter((a) => groupOf(a) === "specs");
+  const others = visible.filter((a) => groupOf(a) === "files");
   const totalSize = (assets ?? []).reduce((sum, a) => sum + a.size, 0);
 
   async function upload(files: File[]) {
@@ -42,7 +117,10 @@ export default function AdminMedia() {
     await Promise.all(
       files.map(async (file) => {
         try {
-          await docsApi.uploadAsset(file);
+          const asset = await docsApi.uploadAsset(file);
+          if (asset.spec_kind) {
+            toast.success(`Contrato ${SPEC_LABEL[asset.spec_kind]} reconhecido`, { description: `${asset.name} já pode ser referenciado nas páginas.` });
+          }
         } catch (err) {
           toast.error(`Falha ao enviar ${file.name}`, { description: (err as Error).message });
         } finally {
@@ -50,7 +128,7 @@ export default function AdminMedia() {
         }
       }),
     );
-    toast.success(`${files.length} arquivo(s) enviado(s) ao S3`);
+    toast.success(`${files.length} arquivo(s) enviado(s)`);
     mutate();
   }
 
@@ -83,9 +161,9 @@ export default function AdminMedia() {
       <div className="mx-auto max-w-[1280px] space-y-6 p-5 lg:p-8">
         <header className="flex flex-wrap items-end gap-4">
           <div className="flex-1">
-            <h1 className="font-display text-3xl font-semibold tracking-tight">Mídia</h1>
+            <h1 className="font-display text-3xl font-semibold tracking-tight">Arquivos</h1>
             <p className="text-muted-foreground">
-              {assets ? `${assets.length} arquivo(s) · ${formatBytes(totalSize)} no S3` : "Imagens e anexos da documentação"}
+              {assets ? `${assets.length} arquivo(s) · ${formatBytes(totalSize)}` : "Imagens, contratos de API e anexos da documentação"}
             </p>
           </div>
           <div className="relative w-full sm:w-64">
@@ -114,6 +192,25 @@ export default function AdminMedia() {
           />
         </header>
 
+        <div role="tablist" aria-label="Tipo de arquivo" className="flex w-fit flex-wrap rounded-xl bg-muted p-1">
+          {FILTERS.map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={filter === id}
+              onClick={() => setFilter(id)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors",
+                filter === id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {label}
+              <span className="rounded-md bg-background/70 px-1.5 font-mono text-[10px]">{count(id)}</span>
+            </button>
+          ))}
+        </div>
+
         {isLoading && (
           <div className="columns-2 gap-4 md:columns-3 xl:columns-4">
             {Array.from({ length: 8 }, (_, i) => (
@@ -130,14 +227,50 @@ export default function AdminMedia() {
             <span className="brand-tile flex h-14 w-14 items-center justify-center rounded-2xl">
               <Images className="h-6 w-6" />
             </span>
-            <span className="font-display text-lg font-bold">Sua biblioteca está vazia</span>
-            <span className="text-sm text-muted-foreground">Arraste imagens para esta tela ou clique para enviar.</span>
+            <span className="font-display text-lg font-bold">Nenhum arquivo ainda</span>
+            <span className="text-sm text-muted-foreground">
+              Arraste imagens, contratos OpenAPI/AsyncAPI (.yaml, .json), PDFs e outros arquivos para esta tela, ou clique para enviar.
+            </span>
           </button>
         )}
 
+        {assets && assets.length > 0 && visible.length === 0 && (
+          <p className="rounded-2xl border border-dashed py-10 text-center text-sm text-muted-foreground">Nenhum arquivo corresponde à busca.</p>
+        )}
+
+        {specs.length > 0 && (
+          <section className="space-y-3">
+            <div>
+              <h2 className="font-display text-lg font-bold">Contratos de API</h2>
+              <p className="text-sm text-muted-foreground">
+                Use em qualquer página: digite <code className="rounded bg-muted px-1 font-mono text-xs">/</code> no editor e escolha Referência OpenAPI ou AsyncAPI.
+              </p>
+            </div>
+            <ul className="divide-y overflow-hidden rounded-2xl border bg-card">
+              {specs.map((a) => (
+                <FileRow key={a.key} asset={a} onCopy={copy} onDelete={setToDelete} />
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {others.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="font-display text-lg font-bold">Outros arquivos</h2>
+            <ul className="divide-y overflow-hidden rounded-2xl border bg-card">
+              {others.map((a) => (
+                <FileRow key={a.key} asset={a} onCopy={copy} onDelete={setToDelete} />
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {images.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="font-display text-lg font-bold">Imagens</h2>
         <div className="columns-2 gap-4 md:columns-3 xl:columns-4">
           <AnimatePresence>
-            {visible.map((asset) => (
+            {images.map((asset) => (
               <motion.figure
                 key={asset.key}
                 layout
@@ -179,6 +312,8 @@ export default function AdminMedia() {
             ))}
           </AnimatePresence>
         </div>
+          </section>
+        )}
       </div>
 
       {/* overlay de upload */}

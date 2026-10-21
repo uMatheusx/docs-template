@@ -5,7 +5,7 @@ import useSWR from "swr";
 import { ApiReference } from "@/components/api/api-reference";
 import { arr, parseSpec, str } from "@/components/api/spec";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ApiError, keys, type Page } from "@/lib/api";
+import { ApiError, fetchText, isAssetRef, keys, type Page } from "@/lib/api";
 import { useDocsBase } from "@/lib/docs-base";
 
 type SpecKind = "openapi" | "asyncapi";
@@ -34,7 +34,7 @@ function readConfig(code: string): EmbedConfig {
   if (!spec) return { ...empty, error };
   if ("openapi" in spec || "asyncapi" in spec || "swagger" in spec) return { ...empty, inline: code };
   const ref = str(spec.ref);
-  if (!ref) return { ...empty, error: "Informe `ref: /docs/caminho-da-especificacao` ou cole a especificação no bloco." };
+  if (!ref) return { ...empty, error: "Informe `ref: /docs/caminho-da-especificacao` (ou o arquivo de Arquivos) ou cole a especificação no bloco." };
   return { ref, operations: list(spec.operations), tags: list(spec.tags), channels: list(spec.channels) };
 }
 
@@ -47,7 +47,53 @@ function Problem({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Especificação enviada como arquivo em Arquivos (`ref: /api/assets/…`). */
+function AssetSpec({ kind, config }: { kind: SpecKind; config: EmbedConfig }) {
+  const ref = config.ref ?? "";
+  const { data: text, error, isLoading } = useSWR<string>(["asset-text", ref], () => fetchText(ref));
+  const { spec } = useMemo(() => (text ? parseSpec(text) : { spec: undefined }), [text]);
+
+  if (isLoading) return <Skeleton className="not-prose my-6 h-48 rounded-3xl" />;
+  if (error || text === undefined) {
+    const missing = error instanceof ApiError && error.status === 404;
+    return (
+      <Problem>
+        {missing ? (
+          <>
+            O arquivo <code className="break-all">{ref}</code> não existe mais em Arquivos.
+          </>
+        ) : (
+          <>Não foi possível carregar o arquivo: {(error as Error | undefined)?.message}</>
+        )}
+      </Problem>
+    );
+  }
+  const actual = spec ? ("asyncapi" in spec ? "asyncapi" : "openapi" in spec || "swagger" in spec ? "openapi" : null) : null;
+  if (actual !== kind) {
+    return (
+      <Problem>
+        <code className="break-all">{ref}</code> não é uma especificação {kind === "openapi" ? "OpenAPI" : "AsyncAPI"}
+        {actual ? ` (é ${actual === "openapi" ? "OpenAPI" : "AsyncAPI"}: troque o bloco para \`\`\`${actual})` : ""}.
+      </Problem>
+    );
+  }
+  return (
+    <ApiReference
+      kind={kind}
+      content={text}
+      embedded
+      sourceHref={ref}
+      filter={{ operations: config.operations, tags: config.tags, channels: config.channels }}
+    />
+  );
+}
+
 function ReferencedSpec({ kind, config }: { kind: SpecKind; config: EmbedConfig }) {
+  if (isAssetRef(config.ref ?? "")) return <AssetSpec kind={kind} config={config} />;
+  return <PageSpec kind={kind} config={config} />;
+}
+
+function PageSpec({ kind, config }: { kind: SpecKind; config: EmbedConfig }) {
   const { href } = useDocsBase();
   const path = (config.ref ?? "").replace(/^\/?docs\//, "").replace(/^\/+|\/+$/g, "");
   const { data: page, error, isLoading } = useSWR<Page>(keys.pageByPath(path));

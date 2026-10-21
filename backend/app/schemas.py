@@ -123,6 +123,8 @@ class Asset(BaseModel):
     size: int
     content_type: str | None = None
     last_modified: str
+    # contrato OpenAPI/AsyncAPI reconhecido no envio (pode ser referenciado nas páginas)
+    spec_kind: Literal["openapi", "asyncapi"] | None = None
 
 
 class Stats(BaseModel):

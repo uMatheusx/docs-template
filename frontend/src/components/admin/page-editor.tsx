@@ -37,7 +37,7 @@ import useSWR, { useSWRConfig } from "swr";
 import { insertText, replaceAll, wrapSelection } from "@/components/admin/editor-commands";
 import { EditorToolbar } from "@/components/admin/editor-toolbar";
 import { Inspector, type Draft } from "@/components/admin/inspector";
-import { SLASH_IMAGE_EVENT, setSlashPages, slashCommands } from "@/components/admin/slash-commands";
+import { SLASH_IMAGE_EVENT, setSlashAssets, setSlashPages, slashCommands } from "@/components/admin/slash-commands";
 import { MovePageDialog } from "@/components/admin/move-page-dialog";
 import { SaveTemplateDialog } from "@/components/admin/save-template-dialog";
 import { FIELDS, rebaseLocal, toDraft } from "@/lib/draft";
@@ -75,7 +75,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { useSession } from "@/hooks/use-session";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useTheme } from "@/hooks/use-theme";
-import { ApiError, api, docsApi, keys, type Page, type PageInput, type Review, type ReviewDetail } from "@/lib/api";
+import { ApiError, api, docsApi, keys, type Asset, type Page, type PageInput, type Review, type ReviewDetail } from "@/lib/api";
 import { REVIEW_STATUS } from "@/lib/reviews";
 import { cn, countWords, downloadText, readingTime } from "@/lib/utils";
 import { useAdmin } from "@/pages/admin/admin-layout";
@@ -232,6 +232,12 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         .map((n) => ({ id: n.id, title: n.title, path: n.path, published: n.published, kind: n.kind })),
     );
   }, [tree, baseline.id]);
+
+  // arquivos de "Arquivos" que o "/" oferece (contratos OpenAPI/AsyncAPI, PDFs…)
+  const { data: assetList } = useSWR<Asset[]>(keys.assets);
+  useEffect(() => {
+    setSlashAssets(assetList ?? []);
+  }, [assetList]);
 
   const base = toDraft(baseline);
   const changed = FIELDS.filter((f) => draft[f] !== base[f]);

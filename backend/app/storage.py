@@ -481,7 +481,9 @@ class Storage:
         return obj["Body"].read().decode("utf-8")
 
     # ------------------------------------------------------------------ mídia
-    def put_asset(self, data: bytes, filename: str, content_type: str, author: str) -> dict:
+    def put_asset(
+        self, data: bytes, filename: str, content_type: str, author: str, spec_kind: str | None = None
+    ) -> dict:
         asset_id = uuid.uuid4().hex[:12]
         name = safe_filename(filename)
         key = f"assets/{asset_id}/{name}"
@@ -490,13 +492,25 @@ class Storage:
             Key=key,
             Body=data,
             ContentType=content_type or "application/octet-stream",
-            Metadata={"author": _ascii(author)},
+            Metadata={"author": _ascii(author), **({"spec-kind": spec_kind} if spec_kind else {})},
         )
-        return self._asset_dict(key, len(data), datetime.now(UTC), content_type)
+        return self._asset_dict(key, len(data), datetime.now(UTC), content_type, spec_kind)
 
     def list_assets(self) -> list[dict]:
         objects = sorted(self._list("assets/"), key=lambda o: o["LastModified"], reverse=True)
-        return [self._asset_dict(o["Key"], o["Size"], o["LastModified"]) for o in objects]
+        return [
+            self._asset_dict(o["Key"], o["Size"], o["LastModified"], spec_kind=self._spec_kind(o["Key"]))
+            for o in objects
+        ]
+
+    def _spec_kind(self, key: str) -> str | None:
+        """OpenAPI/AsyncAPI reconhecido no envio (guardado nos metadados; só vale olhar arquivos yaml/json)."""
+        if not key.lower().endswith((".yaml", ".yml", ".json")):
+            return None
+        try:
+            return self.s3.head_object(Bucket=self.bucket, Key=key).get("Metadata", {}).get("spec-kind")
+        except ClientError:
+            return None
 
     def get_asset(self, asset_id: str, filename: str) -> dict | None:
         try:
@@ -510,7 +524,9 @@ class Storage:
         self.s3.delete_object(Bucket=self.bucket, Key=f"assets/{asset_id}/{filename}")
 
     @staticmethod
-    def _asset_dict(key: str, size: int, modified: datetime, content_type: str | None = None) -> dict:
+    def _asset_dict(
+        key: str, size: int, modified: datetime, content_type: str | None = None, spec_kind: str | None = None
+    ) -> dict:
         _, asset_id, name = key.split("/", 2)
         return {
             "id": asset_id,
@@ -520,6 +536,7 @@ class Storage:
             "size": size,
             "content_type": content_type,
             "last_modified": modified.isoformat(),
+            "spec_kind": spec_kind,
         }
 
     # ------------------------------------------------------------------ helpers

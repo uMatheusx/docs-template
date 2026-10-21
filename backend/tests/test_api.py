@@ -85,3 +85,21 @@ def test_assets(admin):
     assert resp.headers["content-type"] == "image/png"
     assert len(admin.get("/api/admin/assets").json()) == 1
     assert admin.delete(f"/api/admin/assets/{asset['id']}/{asset['name']}").status_code == 204
+
+
+def test_uploaded_contracts_are_recognized_as_specs(admin):
+    openapi = b"openapi: 3.0.3\ninfo:\n  title: Contas\n  version: '1'\npaths: {}\n"
+    asyncapi = b"asyncapi: 2.6.0\ninfo:\n  title: Eventos\n  version: '1'\nchannels: {}\n"
+    plain = b"nome: qualquer\nvalor: 1\n"
+    pdf = b"%PDF-1.4 contrato"
+    up = lambda name, data, ctype: admin.post("/api/admin/assets", files={"file": (name, data, ctype)})  # noqa: E731
+    assert up("contas.yaml", openapi, "application/yaml").json()["spec_kind"] == "openapi"
+    assert up("eventos.json", asyncapi, "application/json").json()["spec_kind"] == "asyncapi"
+    assert up("config.yaml", plain, "application/yaml").json()["spec_kind"] is None
+    assert up("contrato.pdf", pdf, "application/pdf").json()["spec_kind"] is None
+
+    listed = {a["name"]: a["spec_kind"] for a in admin.get("/api/admin/assets").json()}
+    assert listed == {"contas.yaml": "openapi", "eventos.json": "asyncapi", "config.yaml": None, "contrato.pdf": None}
+    # o arquivo pode ser lido de volta, para a página que o referencia
+    url = next(a["url"] for a in admin.get("/api/admin/assets").json() if a["name"] == "contas.yaml")
+    assert admin.get(url).content == openapi
