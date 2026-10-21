@@ -3,21 +3,24 @@ import { useState, type FormEvent } from "react";
 
 import type { Draft } from "@/components/admin/inspector";
 import { Button } from "@/components/ui/button";
+import { VersionField } from "@/components/admin/version-field";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { Review } from "@/lib/api";
-import { BUMP_OPTIONS, bumpSemver, isFirstRelease, type Bump } from "@/lib/semver";
+import { BUMP_OPTIONS, bumpSemver, isFirstRelease, isGreater, type Bump } from "@/lib/semver";
 import { cn } from "@/lib/utils";
 
 export interface ReviewDraft {
   title: string;
   description: string;
   requestPublish: boolean;
-  /** tamanho da mudança: define a próxima versão x.y.z quando a proposta for aplicada */
+  /** tamanho da mudança: define a versão x.y.z recomendada quando a proposta for aplicada */
   bump: Bump;
+  /** versão escolhida à mão no lugar da recomendada (ausente = a recomendada) */
+  semver?: string;
 }
 
 const CHANGE_LABEL: Record<keyof Draft, string> = {
@@ -57,8 +60,17 @@ function ReviewForm({ pageTitle, changed, existing, canRequestPublish, currentSe
   const nothing = changed.length === 0 && !requestPublish;
   const [bump, setBump] = useState<Bump>(existing?.bump ?? "patch");
   // a primeira publicação de uma página ainda 0.x vira 1.0.0, qualquer que seja o tamanho da mudança
-  const firstRelease = isFirstRelease(currentSemver, canRequestPublish && requestPublish);
-  const nextSemver = bumpSemver(currentSemver, bump, canRequestPublish && requestPublish);
+  const publishing = canRequestPublish && requestPublish;
+  const firstRelease = isFirstRelease(currentSemver, publishing);
+  const recommended = bumpSemver(currentSemver, bump, publishing);
+  // versão trocada à mão (null = segue a recomendada); mudar o tamanho ou a publicação volta para a recomendada
+  const [custom, setCustom] = useState<string | null>(existing?.semver ?? null);
+  const finalSemver = custom ?? recommended;
+  const semverOk = isGreater(finalSemver, currentSemver);
+  const chooseBump = (next: Bump) => {
+    setBump(next);
+    setCustom(null);
+  };
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -68,6 +80,7 @@ function ReviewForm({ pageTitle, changed, existing, canRequestPublish, currentSe
       description: String(form.get("description") ?? "").trim(),
       requestPublish,
       bump,
+      semver: custom ?? undefined,
     });
     if (ok) onDone();
   }
@@ -108,7 +121,7 @@ function ReviewForm({ pageTitle, changed, existing, canRequestPublish, currentSe
         />
       </div>
       <fieldset className="space-y-2" disabled={firstRelease}>
-        <legend className="text-sm font-medium leading-none">Tamanho da mudança</legend>
+        <legend className="mb-2 text-sm font-medium leading-none">Tamanho da mudança</legend>
         <div role="radiogroup" aria-label="Tamanho da mudança" className="grid gap-2 sm:grid-cols-3">
           {BUMP_OPTIONS.map((o) => (
             <button
@@ -117,7 +130,7 @@ function ReviewForm({ pageTitle, changed, existing, canRequestPublish, currentSe
               role="radio"
               aria-checked={bump === o.value}
               disabled={firstRelease}
-              onClick={() => setBump(o.value)}
+              onClick={() => chooseBump(o.value)}
               className={cn(
                 "rounded-2xl border px-3 py-2 text-left transition-colors disabled:opacity-50",
                 bump === o.value ? "border-foreground bg-muted" : "hover:border-foreground/30 hover:bg-muted/50",
@@ -128,27 +141,37 @@ function ReviewForm({ pageTitle, changed, existing, canRequestPublish, currentSe
             </button>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground">
-          {firstRelease ? "A primeira publicação da página é a versão " : "Quando aplicada, a página vai de "}
-          {!firstRelease && <span className="font-mono font-semibold text-foreground">{currentSemver}</span>}
-          {!firstRelease && " para "}
-          <span className="font-mono font-semibold text-foreground">{nextSemver}</span>.
-        </p>
       </fieldset>
+      <div className="space-y-2">
+        <p className="text-sm font-medium leading-none">Versão resultante</p>
+        <p className="text-xs text-muted-foreground">
+          {firstRelease && custom === null ? "A primeira publicação da página é a versão " : "Quando aplicada, a página vai de "}
+          {!(firstRelease && custom === null) && <span className="font-mono font-semibold text-foreground">{currentSemver}</span>}
+          {!(firstRelease && custom === null) && " para "}
+          <span className="font-mono font-semibold text-foreground">{finalSemver}</span>. Troque qualquer número se preferir outra.
+        </p>
+        <VersionField current={currentSemver} recommended={recommended} value={finalSemver} onChange={(v) => setCustom(v === recommended ? null : v)} />
+      </div>
       {canRequestPublish && (
         <label className="flex items-center justify-between gap-3 rounded-2xl border p-3 text-sm">
           <span>
             <span className="block font-bold">Pedir publicação</span>
             <span className="text-xs text-muted-foreground">Ao aplicar, a página sai de rascunho e fica visível para os leitores.</span>
           </span>
-          <Switch checked={requestPublish} onCheckedChange={setRequestPublish} />
+          <Switch
+            checked={requestPublish}
+            onCheckedChange={(v) => {
+              setRequestPublish(v);
+              setCustom(null);
+            }}
+          />
         </label>
       )}
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone}>
           Cancelar
         </Button>
-        <Button type="submit" disabled={saving || nothing}>
+        <Button type="submit" disabled={saving || nothing || !semverOk}>
           {saving ? <Loader2 className="animate-spin" /> : <GitPullRequest />} {existing ? "Atualizar proposta" : "Enviar proposta"}
         </Button>
       </DialogFooter>

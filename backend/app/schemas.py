@@ -179,8 +179,10 @@ class ReviewInput(BaseModel):
     base_version: int
     # versão x.y.z em que o rascunho se baseia (informativa; a mesclagem usa base_version)
     base_semver: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$")
-    # tamanho da mudança: define a próxima versão quando a proposta for aplicada
+    # tamanho da mudança: define a versão recomendada quando a proposta for aplicada
     bump: Literal["patch", "minor", "major"] = "patch"
+    # versão escolhida à mão no lugar da recomendada (precisa ser maior que a atual)
+    semver: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$")
 
     @field_validator("title", "description")
     @classmethod
@@ -212,6 +214,7 @@ class Review(BaseModel):
     base_version: int
     base_semver: str = ""
     bump: Literal["patch", "minor", "major"] = "patch"
+    semver: str | None = None
     fields: ReviewFields
     has_content: bool
     status: ReviewStatus
@@ -257,8 +260,12 @@ class ReviewDetail(Review):
     current_content: str
     current_version: int
     current_semver: str = ""
-    # versão que a página terá se a proposta for aplicada agora
+    # versão que a página terá se a proposta for aplicada agora (a escolhida à mão, se ainda valer)
     next_semver: str = ""
+    # a recomendada pelo tamanho da mudança
+    recommended_semver: str = ""
+    # a versão escolhida à mão deixou de ser maior que a da página (ela avançou depois da proposta)
+    semver_outdated: bool = False
     page_kind: PageKind = "doc"
     merge: MergeInfo | None = None
 
@@ -276,6 +283,8 @@ class ReviewMerge(BaseModel):
     force: bool = False
     # uma escolha por conflito, na ordem em que aparecem em ReviewDetail.merge.conflicts
     resolutions: list[Literal["ours", "theirs", "both"]] | None = None
+    # versão escolhida por quem aplica, no lugar da sugerida (precisa ser maior que a atual)
+    semver: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$")
 
 
 # ---------------------------------------------------------------- modelos de página

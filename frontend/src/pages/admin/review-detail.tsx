@@ -18,6 +18,7 @@ import useSWR, { useSWRConfig } from "swr";
 
 import { DiffView } from "@/components/admin/diff-view";
 import { MergeConflicts } from "@/components/admin/merge-conflicts";
+import { VersionField } from "@/components/admin/version-field";
 import { ApiReference } from "@/components/api/api-reference";
 import { Markdown } from "@/components/markdown/markdown";
 import {
@@ -38,7 +39,7 @@ import { useSession } from "@/hooks/use-session";
 import { ApiError, docsApi, keys, type MergeChoice, type ReviewDetail, type ReviewEvent } from "@/lib/api";
 import { collapseDiff, diffLines, diffStats } from "@/lib/diff";
 import { ACTIVE_STATUSES, describeFields, EVENT_VERB } from "@/lib/reviews";
-import { BUMP_LABEL } from "@/lib/semver";
+import { BUMP_LABEL, isGreater } from "@/lib/semver";
 import { cn, formatDate, splitLeadingH1, timeAgo } from "@/lib/utils";
 import { ReviewStatusBadge } from "@/pages/admin/reviews";
 
@@ -92,6 +93,13 @@ export default function ReviewDetailPage() {
   const [conflict, setConflict] = useState(false);
   // escolha do revisor para cada conflito (null = ainda não escolheu); recomeça quando os conflitos mudam
   const [choices, setChoices] = useState<{ key: string; values: (MergeChoice | null)[] }>({ key: "", values: [] });
+
+  // versão trocada por quem aplica (null = a sugerida); recomeça quando a proposta muda
+  const [versionChoice, setVersionChoice] = useState<{ key: string; value: string | null }>({ key: "", value: null });
+  const versionKey = `${review?.id}:${review?.current_version}:${review?.updated_at}`;
+  const semverOverride = versionChoice.key === versionKey ? versionChoice.value : null;
+  const finalSemver = semverOverride ?? review?.next_semver ?? "";
+  const semverOk = !review || !review.current_semver || isGreater(finalSemver, review.current_semver);
 
   const mergeInfo = review?.merge ?? null;
   const conflictList = mergeInfo?.state === "conflicts" ? mergeInfo.conflicts : [];
@@ -175,6 +183,7 @@ export default function ReviewDetailPage() {
         docsApi.mergeReview(review.id, {
           force,
           resolutions: conflictList.length > 0 && !force ? (picked as MergeChoice[]) : undefined,
+          semver: semverOverride ?? undefined,
         }),
       mergeInfo?.state === "clean"
         ? "Proposta aplicada, combinada com as mudanças da página"
@@ -251,7 +260,7 @@ export default function ReviewDetailPage() {
             {isAdmin && review.status === "approved" && (
               <Button
                 size="sm"
-                disabled={!!busy || unresolved > 0}
+                disabled={!!busy || unresolved > 0 || !semverOk}
                 title={unresolved > 0 ? `Resolva os ${unresolved} conflito(s) pendente(s) antes de aplicar` : undefined}
                 onClick={() => merge()}
               >
@@ -263,6 +272,24 @@ export default function ReviewDetailPage() {
         </div>
       </header>
 
+      {isAdmin && review.status === "approved" && review.current_semver && (
+        <section aria-label="Versão resultante" className="rounded-3xl border bg-card p-5">
+          <h2 className="font-display text-base font-semibold tracking-tight">Versão resultante</h2>
+          <p className="mb-3 mt-1 text-sm text-muted-foreground">
+            Ao aplicar, a página vai de <span className="font-mono font-semibold text-foreground">{review.current_semver}</span> para{" "}
+            <span className="font-mono font-semibold text-foreground">{finalSemver}</span>.
+            {review.semver_outdated &&
+              ` A versão escolhida na proposta (${review.semver}) deixou de valer, porque a página já avançou; a sugerida agora é ${review.next_semver}.`}
+          </p>
+          <VersionField
+            idPrefix="apply-version"
+            current={review.current_semver}
+            recommended={review.recommended_semver}
+            value={finalSemver}
+            onChange={(v) => setVersionChoice({ key: versionKey, value: v === review.next_semver ? null : v })}
+          />
+        </section>
+      )}
       {active && outdated && mergeInfo?.state === "clean" && (
         <div className="flex items-start gap-3 rounded-2xl border border-sky-500/40 bg-sky-500/10 p-4 text-sm">
           <GitMerge className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />

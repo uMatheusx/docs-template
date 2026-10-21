@@ -399,7 +399,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     setReviewOpen(true);
   }
 
-  async function submitReview({ title, description, requestPublish, bump }: ReviewDraft) {
+  async function submitReview({ title, description, requestPublish, bump, semver }: ReviewDraft) {
     if (unsaved) {
       toast.error("Salve antes de enviar para revisão");
       return false;
@@ -422,6 +422,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         base_version: origin.version,
         base_semver: origin.semver,
         bump,
+        semver,
       });
       // a proposta guarda as alterações: o editor volta para a versão publicada
       try {

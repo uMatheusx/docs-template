@@ -34,3 +34,12 @@ export function bumpSemver(current: string, kind: Bump, publishing = false): str
 
 /** Versão de quem foi gravado antes do x.y.z: a revisão n vira 1.0.(n-1). */
 export const legacySemver = (revision: number) => `1.0.${Math.max(revision, 1) - 1}`;
+
+/** Compara número a número (1.10.0 > 1.9.0). Versão inválida nunca é maior. */
+export function isGreater(candidate: string, current: string): boolean {
+  const a = parse(candidate);
+  const b = parse(current);
+  if (!a || !b) return false;
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return false;
+}

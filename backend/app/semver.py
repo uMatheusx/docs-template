@@ -35,6 +35,11 @@ def is_valid(version: str | None) -> bool:
     return bool(version and SEMVER_RE.match(version))
 
 
+def is_greater(candidate: str, current: str) -> bool:
+    """candidate > current, comparando número a número (1.10.0 > 1.9.0)."""
+    return parse(candidate) > parse(current)
+
+
 def legacy_semver(revision: int) -> str:
     """Versão de quem foi gravado antes do x.y.z: a revisão n vira 1.0.(n-1)."""
     return f"1.0.{max(int(revision), 1) - 1}"

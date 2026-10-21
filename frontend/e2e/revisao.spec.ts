@@ -200,3 +200,57 @@ test("versões x.y.z: rascunho 0.1.0, primeira publicação 1.0.0 e uma novidade
   await expect(page.getByText(/Aplicada como/).first()).toBeVisible();
   expect(await readerFooter()).toContain("versão 1.1.0");
 });
+
+test("trocar a versão à mão: o autor muda o y, o revisor muda o x ao aplicar", async ({ page }) => {
+  const title = `Manual ${unique()}`;
+  const slug = title.toLowerCase().replace(/ /g, "-");
+  await loginAs(page, "admin");
+  const created = await (await page.request.post("/api/admin/pages", { data: { title, content: `# ${title}\n\nTexto.\n` } })).json();
+  await changeViaReview(page.request, created.id, { fields: { published: true } }); // 1.0.0
+
+  await page.goto(`/admin/pages/${created.id}`);
+  await appendToEditor(page, "\n\nMais um trecho.");
+  await page.getByRole("button", { name: /^Salvar/ }).click();
+  await page.getByRole("button", { name: "Enviar para revisão" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel(/O que mudou e por quê/).fill("Teste de versão escolhida.");
+
+  // padrão: a recomendada (correção = 1.0.1); trocar o y vira 1.4.1 e diz que foi escolhida
+  await expect(dialog.getByLabel("Principal (x)")).toHaveValue("1");
+  await expect(dialog.getByLabel("Secundário (y)")).toHaveValue("0");
+  await expect(dialog.getByLabel("Correção (z)")).toHaveValue("1");
+  await dialog.getByLabel("Secundário (y)").fill("4");
+  await expect(dialog.getByText(/Escolhida por você/)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Usar a recomendada \(1\.0\.1\)/ })).toBeVisible();
+
+  // versão que não é maior que a atual é recusada na hora
+  await dialog.getByLabel("Principal (x)").fill("0");
+  await expect(dialog.getByRole("alert")).toContainText("Precisa ser maior que a versão atual (1.0.0)");
+  await expect(dialog.getByRole("button", { name: "Enviar proposta" })).toBeDisabled();
+  await dialog.getByLabel("Principal (x)").fill("1");
+
+  // mudar o tamanho volta para a recomendada
+  await dialog.getByRole("radio", { name: /Novidade/ }).click();
+  await expect(dialog.getByLabel("Secundário (y)")).toHaveValue("1");
+  await dialog.getByLabel("Secundário (y)").fill("4");
+  await dialog.getByRole("button", { name: "Enviar proposta" }).click();
+  await expect(dialog).toBeHidden();
+
+  // o revisor vê a escolha do autor (1.4.0) e a troca antes de aplicar
+  await page.goto("/admin/reviews");
+  await page.getByText(`Atualiza ${title}`).first().click();
+  await page.getByRole("button", { name: "Aprovar" }).click();
+  const section = page.getByRole("region", { name: "Versão resultante" });
+  await expect(section.getByLabel("Secundário (y)")).toHaveValue("4");
+  await section.getByLabel("Principal (x)").fill("2");
+  await expect(section.getByText(/Escolhida por você/)).toBeVisible();
+  await page.getByRole("button", { name: "Aplicar na página" }).click();
+  await expect(page.getByText(/Aplicada como/).first()).toBeVisible();
+  await expect(page.getByText("2.4.0").first()).toBeVisible();
+
+  const reader = await page.context().browser()!.newContext({ baseURL: "http://localhost:5175" });
+  const readerPage = await reader.newPage();
+  await readerPage.goto(`/docs/${slug}`);
+  await expect(readerPage.getByText(/Atualizado em .*, versão 2\.4\.0/)).toBeVisible();
+  await reader.close();
+});

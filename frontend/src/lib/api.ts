@@ -157,6 +157,8 @@ export interface Review {
   base_version: number;
   base_semver: string;
   bump: Bump;
+  /** versão escolhida à mão pelo autor (null = a recomendada pelo tamanho da mudança) */
+  semver: string | null;
   fields: ReviewFields;
   has_content: boolean;
   status: ReviewStatus;
@@ -197,6 +199,10 @@ export interface ReviewDetail extends Review {
   current_semver: string;
   /** versão que a página terá se a proposta for aplicada agora */
   next_semver: string;
+  /** a recomendada pelo tamanho da mudança */
+  recommended_semver: string;
+  /** a versão escolhida à mão deixou de ser maior que a da página */
+  semver_outdated: boolean;
   page_kind: PageKind;
   merge: MergeInfo | null;
 }
@@ -209,6 +215,8 @@ export interface ReviewInput {
   base_version: number;
   base_semver?: string;
   bump?: Bump;
+  /** versão escolhida à mão, no lugar da recomendada */
+  semver?: string;
 }
 
 // ---------------------------------------------------------------- modelos
@@ -313,10 +321,10 @@ export const docsApi = {
   approveReview: (id: string, body = "") => api<Review>(`/api/admin/reviews/${id}/approve`, { method: "POST", json: { body } }),
   requestChanges: (id: string, body: string) =>
     api<Review>(`/api/admin/reviews/${id}/request-changes`, { method: "POST", json: { body } }),
-  mergeReview: (id: string, options: { force?: boolean; resolutions?: MergeChoice[] } = {}) =>
+  mergeReview: (id: string, options: { force?: boolean; resolutions?: MergeChoice[]; semver?: string } = {}) =>
     api<Review>(`/api/admin/reviews/${id}/merge`, {
       method: "POST",
-      json: { force: options.force ?? false, resolutions: options.resolutions },
+      json: { force: options.force ?? false, resolutions: options.resolutions, semver: options.semver },
     }),
   closeReview: (id: string) => api<Review>(`/api/admin/reviews/${id}/close`, { method: "POST" }),
 

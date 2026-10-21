@@ -10,7 +10,7 @@ from fastapi import HTTPException, status
 
 from .markdown_utils import first_heading, fold, parse_frontmatter, slugify, to_search_text
 from .schemas import PageCreate, PageUpdate
-from .semver import DRAFT_START, FIRST_RELEASE, Bump, bump_semver, legacy_semver
+from .semver import DRAFT_START, FIRST_RELEASE, Bump, bump_semver, is_greater, legacy_semver
 from .specs import detect_kind, parse_spec, spec_info
 from .storage import Storage, VersionConflict, utcnow
 from .tree import build_tree, descendants, flatten, sort_key
@@ -163,11 +163,19 @@ class DocsService:
         return self.get_page(page_id, include_drafts=True)
 
     def update_page(
-        self, page_id: str, data: PageUpdate, author: str, *, via_review: bool = False, bump: Bump = "patch"
+        self,
+        page_id: str,
+        data: PageUpdate,
+        author: str,
+        *,
+        via_review: bool = False,
+        bump: Bump = "patch",
+        semver: str | None = None,
     ) -> dict:
         """Salva alterações. Rascunhos mudam direto; páginas publicadas (e a publicação de um rascunho) só
         mudam por uma proposta de revisão aplicada (`via_review=True`), para qualquer papel.
-        Cada gravação gera a próxima versão x.y.z conforme `bump` (padrão: patch)."""
+        Cada gravação gera a próxima versão x.y.z conforme `bump` (padrão: patch), ou a `semver` informada,
+        que precisa ser maior que a atual."""
         current = self.storage.get_page(page_id)
         if not current:
             raise not_found()
@@ -201,9 +209,13 @@ class DocsService:
         # a nota descreve só esta versão: sem nota, a anterior não deve "vazar" para cá
         note = (data.note or "").strip()
         publishing = bool(fields.get("published")) and not current.get("published", True)
-        semver = bump_semver(
-            current.get("semver") or legacy_semver(current.get("version", 1)), bump, publishing=publishing
-        )
+        current_semver = current.get("semver") or legacy_semver(current.get("version", 1))
+        if semver is None:
+            semver = bump_semver(current_semver, bump, publishing=publishing)
+        elif not is_greater(semver, current_semver):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, f"A versão precisa ser maior que a atual ({current_semver})."
+            )
         fields.update(updated_at=utcnow(), updated_by=author, version=expected + 1, semver=semver, note=note)
 
         try:

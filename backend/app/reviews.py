@@ -13,7 +13,7 @@ from fastapi import HTTPException, status
 from .config import Settings
 from .merge3 import MergeResult, merge3
 from .schemas import PageUpdate, ReviewInput, User
-from .semver import bump_semver, legacy_semver
+from .semver import bump_semver, is_greater, legacy_semver
 from .service import DocsService, not_found
 from .storage import utcnow
 from .tree import build_tree, flatten
@@ -83,12 +83,16 @@ class ReviewService:
         return merge3(base, self.storage.get_content(review["page_id"]), proposed)
 
     @staticmethod
-    def _next_semver(review: dict, page: dict | None) -> str:
-        """Versão que a página terá se a proposta for aplicada agora."""
+    def _semver_plan(review: dict, page: dict | None) -> dict:
+        """Versão recomendada pelo tamanho da mudança, a que valerá agora e se a escolhida à mão perdeu a validade."""
         if not page or not page.get("semver"):
-            return ""
+            return {"recommended": "", "effective": "", "outdated": False}
         publishing = bool((review.get("fields") or {}).get("published")) and not page.get("published", True)
-        return bump_semver(page["semver"], review.get("bump", "patch"), publishing=publishing)
+        recommended = bump_semver(page["semver"], review.get("bump", "patch"), publishing=publishing)
+        custom = review.get("semver")
+        if custom and is_greater(custom, page["semver"]):
+            return {"recommended": recommended, "effective": custom, "outdated": False}
+        return {"recommended": recommended, "effective": recommended, "outdated": bool(custom)}
 
     def _merge_info(self, review: dict, page: dict | None) -> dict | None:
         if not page or review["status"] not in ACTIVE or not review.get("has_content"):
@@ -136,13 +140,16 @@ class ReviewService:
         if review["status"] == "merged":
             current = self.storage.get_text(self._base_key(review)) or current
         proposed = self.storage.get_text(self._proposal_key(review)) if review.get("has_content") else None
+        plan = self._semver_plan(review, page)
         return {
             **self._decorate(review),
             "proposed_content": proposed if proposed is not None else current,
             "current_content": current,
             "current_version": (page or {}).get("version", 0),
             "current_semver": (page or {}).get("semver", ""),
-            "next_semver": self._next_semver(review, page),
+            "next_semver": plan["effective"],
+            "recommended_semver": plan["recommended"],
+            "semver_outdated": plan["outdated"],
             "page_kind": (page or {}).get("kind", "doc"),
             "merge": self._merge_info(review, page),
         }
@@ -161,6 +168,10 @@ class ReviewService:
             (r for r in self.storage.list_reviews(page_id) if r["author"] == user.username and r["status"] in ACTIVE),
             None,
         )
+        if data.semver and not is_greater(data.semver, page.get("semver", "0.0.0")):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, f"A versão precisa ser maior que a atual ({page.get('semver')})."
+            )
         # sem a versão informada, a base é a atual (se coincide) ou a equivalente da revisão antiga
         base_semver = page.get("semver", "") if page.get("version") == data.base_version else ""
         base_semver = base_semver or legacy_semver(data.base_version)
@@ -175,6 +186,7 @@ class ReviewService:
                 base_version=data.base_version,
                 base_semver=data.base_semver or base_semver,
                 bump=data.bump,
+                semver=data.semver,
                 status="open",
             )
             event = _event("updated", user.username, "Atualizou a proposta.")
@@ -188,6 +200,7 @@ class ReviewService:
                 "base_version": data.base_version,
                 "base_semver": data.base_semver or base_semver,
                 "bump": data.bump,
+                "semver": data.semver,
                 "fields": fields,
                 "has_content": data.content is not None,
                 "status": "open",
@@ -229,7 +242,12 @@ class ReviewService:
         return self._decorate(self._save(review, _event("changes_requested", user.username, body.strip())))
 
     def merge(
-        self, review_id: str, user: User, force: bool = False, resolutions: list[str] | None = None
+        self,
+        review_id: str,
+        user: User,
+        force: bool = False,
+        resolutions: list[str] | None = None,
+        semver: str | None = None,
     ) -> dict:
         review = self._get(review_id)
         if user.role != "admin":
@@ -275,8 +293,17 @@ class ReviewService:
             version=page.get("version"),
             note=f"Revisão #{review['number']}: {review['title']}"[:200],
         )
+        # a versão que quem aplica escolheu vale sempre (e precisa ser maior que a atual); sem ela, vale a da
+        # proposta se ainda for maior que a da página, senão a recomendada pelo tamanho da mudança
+        plan = self._semver_plan(review, page)
+        chosen = semver or (plan["effective"] if review.get("semver") and not plan["outdated"] else None)
         saved = self.docs.update_page(
-            review["page_id"], update, review["author"], via_review=True, bump=review.get("bump", "patch")
+            review["page_id"],
+            update,
+            review["author"],
+            via_review=True,
+            bump=review.get("bump", "patch"),
+            semver=chosen,
         )
         review["status"] = "merged"
         review["merged_version"] = saved["version"]
