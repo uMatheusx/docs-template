@@ -32,7 +32,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Hint } from "@/components/ui/tooltip";
 import { useSession } from "@/hooks/use-session";
 import { api, keys, type LinkReport, type Stats } from "@/lib/api";
-import { contentHealth, type Severity } from "@/lib/health";
+import { contentHealth, type HealthIssue, type Severity } from "@/lib/health";
 import { countNodes } from "@/lib/tree";
 import { cn, greeting, timeAgo } from "@/lib/utils";
 import { useAdmin } from "@/pages/admin/admin-layout";
@@ -49,32 +49,64 @@ const SEVERITY: Record<Severity, { icon: LucideIcon; label: string; className: s
   info: { icon: Info, label: "Info", className: "text-navy-600 bg-navy-500/10 dark:text-navy-300" },
 };
 
-function ScoreRing({ score }: { score: number }) {
-  const r = 52;
-  const c = 2 * Math.PI * r;
-  const tone = score >= 80 ? "Ótima" : score >= 60 ? "Boa" : "Precisa de atenção";
+const SEGMENT: Record<Severity | "ok", string> = {
+  ok: "bg-emerald-500",
+  info: "bg-sky-500",
+  warning: "bg-amber-500",
+  critical: "bg-red-500",
+};
+
+/**
+ * Resumo da saúde do conteúdo: a nota e uma barra com um trecho por verificação. Perto de 100 a nota sozinha parece
+ * "completa"; os trechos mostram exatamente qual verificação ainda tem problema.
+ */
+function HealthSummary({ score, checks }: { score: number; checks: HealthIssue[] }) {
+  const problems = (check: HealthIssue) => check.links?.length ?? check.pages.length;
+  const failing = checks.filter((c) => problems(c) > 0).length;
+  // "Ótima" só sem nada crítico ou de atenção pendente: a nota sozinha esconde um link quebrado
+  const severities = checks.filter((c) => problems(c) > 0).map((c) => c.severity);
+  const hasCritical = severities.includes("critical");
+  const hasWarning = severities.includes("warning");
+  const level = score < 60 || (hasCritical && score < 80) ? "low" : hasCritical || hasWarning || score < 80 ? "mid" : "high";
+  const tone = { high: "Ótima", mid: "Boa", low: "Precisa de atenção" }[level];
+  const toneClass = {
+    high: "text-emerald-700 dark:text-emerald-300",
+    mid: "text-amber-700 dark:text-amber-300",
+    low: "text-red-700 dark:text-red-300",
+  }[level];
   return (
-    <div className="relative flex h-40 w-40 items-center justify-center" role="meter" aria-valuenow={score} aria-valuemin={0} aria-valuemax={100} aria-label="Saúde do conteúdo">
-      <svg viewBox="0 0 120 120" className="absolute inset-0 -rotate-90">
-        <circle cx="60" cy="60" r={r} fill="none" stroke="hsl(var(--foreground) / 0.08)" strokeWidth="10" />
-        <motion.circle
-          cx="60"
-          cy="60"
-          r={r}
-          fill="none"
-          stroke="hsl(var(--brand))"
-          strokeWidth="10"
-          strokeLinecap="round"
-          strokeDasharray={c}
-          initial={{ strokeDashoffset: c }}
-          animate={{ strokeDashoffset: c * (1 - score / 100) }}
-          transition={{ duration: 1.1, ease: [0.2, 0.7, 0.2, 1] }}
-        />
-      </svg>
-      <div className="text-center">
-        <CountUp value={score} className="font-display text-4xl font-semibold" />
-        <p className="text-xs text-muted-foreground">{tone}</p>
+    <div className="w-full space-y-3 lg:w-[280px]">
+      <p className="flex items-center gap-1.5 text-sm font-semibold">
+        <ShieldCheck className="h-4 w-4 text-brand" /> Saúde do conteúdo
+      </p>
+      <div className="flex items-baseline gap-2" role="meter" aria-valuenow={score} aria-valuemin={0} aria-valuemax={100} aria-label="Saúde do conteúdo">
+        <CountUp value={score} className="font-display text-5xl font-semibold tabular-nums leading-none" />
+        <span className="text-lg text-muted-foreground">/100</span>
+        <span className={cn("ml-auto text-sm font-semibold", toneClass)}>{tone}</span>
       </div>
+      {checks.length > 0 && (
+        <>
+          <ul className="flex gap-1" aria-label="Verificações">
+            {checks.map((check) => {
+              const count = problems(check);
+              return (
+                <li
+                  key={check.id}
+                  title={count > 0 ? `${check.label}: ${count}` : check.okLabel}
+                  className={cn("h-1.5 flex-1 rounded-full", SEGMENT[count > 0 ? check.severity : "ok"])}
+                >
+                  <span className="sr-only">{count > 0 ? `${check.label}: ${count}` : check.okLabel}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-xs text-muted-foreground">
+            {failing === 0
+              ? `Todas as ${checks.length} verificações sem problemas.`
+              : `${checks.length - failing} de ${checks.length} verificações sem problemas. Veja o checklist abaixo.`}
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -109,7 +141,7 @@ export default function AdminDashboard() {
   });
   const { data: linkReport, isValidating: checkingLinks, mutate: recheckLinks } = useSWR<LinkReport>(keys.linkReport);
   const [openIssue, setOpenIssue] = useState<string>();
-  const { score, issues, passed } = contentHealth(tree, linkReport);
+  const { score, issues, passed, checks } = contentHealth(tree, linkReport);
   const sections = tree.map((n) => ({ node: n, count: countNodes([n]) })).sort((a, b) => b.count - a.count);
   const maxSection = Math.max(1, ...sections.map((s) => s.count));
   const publishedPct = stats?.total ? Math.round((stats.published / stats.total) * 100) : 0;
@@ -157,17 +189,15 @@ export default function AdminDashboard() {
               </Button>
             </div>
           </div>
-          <div className="flex items-center gap-5 rounded-2xl bg-muted/70 p-5">
-            {treeLoading ? <Skeleton className="h-40 w-40 rounded-full" /> : <ScoreRing score={score} />}
-            <div className="max-w-[180px]">
-              <p className="flex items-center gap-1.5 text-sm font-semibold">
-                <ShieldCheck className="h-4 w-4 text-brand" /> Saúde do conteúdo
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Mede descrições preenchidas, páginas atualizadas, publicadas e sem links ou imagens quebrados.
-              </p>
+          {treeLoading ? (
+            <div className="w-full space-y-3 lg:w-[280px]">
+              <Skeleton className="h-4 w-36" />
+              <Skeleton className="h-12 w-40" />
+              <Skeleton className="h-1.5 w-full rounded-full" />
             </div>
-          </div>
+          ) : (
+            <HealthSummary score={score} checks={checks} />
+          )}
         </div>
       </motion.section>
 

@@ -22,7 +22,7 @@ const STALE_DAYS = 180;
 export function contentHealth(
   tree: TreeNode[],
   report?: LinkReport,
-): { score: number; issues: HealthIssue[]; passed: HealthIssue[]; total: number } {
+): { score: number; issues: HealthIssue[]; passed: HealthIssue[]; checks: HealthIssue[]; total: number } {
   const pages = flattenTree(tree);
   const byId = new Map(pages.map((p) => [p.id, p]));
   const linkCheck = (
@@ -96,9 +96,9 @@ export function contentHealth(
   const issues = checks.filter((c) => count(c) > 0);
   const passed = checks.filter((c) => count(c) === 0);
 
-  if (!pages.length) return { score: 100, issues, passed, total: 0 };
+  if (!pages.length) return { score: 100, issues, passed, checks, total: 0 };
   // cada página vale 4 checagens: descrição, atualidade, publicação e links/imagens íntegros
   const brokenPages = new Set(report?.issues.filter((i) => i.kind !== "draft_link").map((i) => i.page_id)).size;
   const ok = pages.length * 4 - noDescription.length - stale.length - drafts.length - brokenPages;
-  return { score: Math.round((ok / (pages.length * 4)) * 100), issues, passed, total: pages.length };
+  return { score: Math.round((ok / (pages.length * 4)) * 100), issues, passed, checks, total: pages.length };
 }
