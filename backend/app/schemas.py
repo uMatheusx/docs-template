@@ -19,7 +19,9 @@ class PageMeta(BaseModel):
     created_at: str
     updated_at: str
     updated_by: str = ""
+    # revisão interna (controle de edições simultâneas) e versão x.y.z exibida às pessoas
     version: int = 1
+    semver: str = "1.0.0"
     note: str = ""
     kind: PageKind = "doc"
     path: str
@@ -102,6 +104,7 @@ class HistoryEntry(BaseModel):
     author: str
     size: int
     version: int | None = None
+    semver: str | None = None
     note: str = ""
     created_at: str
     archived_at: str
@@ -174,6 +177,10 @@ class ReviewInput(BaseModel):
     content: str | None = None
     fields: ReviewFields = ReviewFields()
     base_version: int
+    # versão x.y.z em que o rascunho se baseia (informativa; a mesclagem usa base_version)
+    base_semver: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$")
+    # tamanho da mudança: define a próxima versão quando a proposta for aplicada
+    bump: Literal["patch", "minor", "major"] = "patch"
 
     @field_validator("title", "description")
     @classmethod
@@ -203,6 +210,8 @@ class Review(BaseModel):
     title: str
     description: str = ""
     base_version: int
+    base_semver: str = ""
+    bump: Literal["patch", "minor", "major"] = "patch"
     fields: ReviewFields
     has_content: bool
     status: ReviewStatus
@@ -210,6 +219,7 @@ class Review(BaseModel):
     created_at: str
     updated_at: str
     merged_version: int | None = None
+    merged_semver: str | None = None
     events: list[ReviewEvent] = []
 
 
@@ -236,6 +246,8 @@ class MergeInfo(BaseModel):
     state: Literal["current", "clean", "conflicts", "unavailable"]
     base_version: int
     current_version: int
+    base_semver: str = ""
+    current_semver: str = ""
     conflicts: list[MergeConflict] = []
     merged_content: str | None = None
 
@@ -244,6 +256,9 @@ class ReviewDetail(Review):
     proposed_content: str
     current_content: str
     current_version: int
+    current_semver: str = ""
+    # versão que a página terá se a proposta for aplicada agora
+    next_semver: str = ""
     page_kind: PageKind = "doc"
     merge: MergeInfo | None = None
 

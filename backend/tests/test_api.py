@@ -52,7 +52,7 @@ def test_crud_versioning_and_history(admin):
     assert history[-1]["note"] == "Página criada"
     restored = admin.post(f"/api/admin/pages/{page['id']}/history/{history[-1]['id']}/restore").json()
     assert restored["content"].startswith("# Página Nova")
-    assert restored["note"] == "Restaurada de v1"
+    assert restored["note"] == "Restaurada de 0.1.0"
 
     # rascunhos não aparecem para leitores anônimos
     admin.post("/api/auth/logout")

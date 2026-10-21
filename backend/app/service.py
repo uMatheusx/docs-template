@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 
 from .markdown_utils import first_heading, fold, parse_frontmatter, slugify, to_search_text
 from .schemas import PageCreate, PageUpdate
+from .semver import DRAFT_START, FIRST_RELEASE, Bump, bump_semver, legacy_semver
 from .specs import detect_kind, parse_spec, spec_info
 from .storage import Storage, VersionConflict, utcnow
 from .tree import build_tree, descendants, flatten, sort_key
@@ -150,17 +151,23 @@ class DocsService:
             "updated_at": now,
             "updated_by": author,
             "version": 1,
+            "semver": FIRST_RELEASE if data.published else DRAFT_START,
             "note": "Página criada",
             "kind": data.kind,
             "search_text": to_search_text(content),
         }
-        self.storage.put_content(page_id, content, author, version=1, note="Página criada", archive=False)
+        self.storage.put_content(
+            page_id, content, author, version=1, semver=item["semver"], note="Página criada", archive=False
+        )
         self.storage.put_page(item)
         return self.get_page(page_id, include_drafts=True)
 
-    def update_page(self, page_id: str, data: PageUpdate, author: str, *, via_review: bool = False) -> dict:
+    def update_page(
+        self, page_id: str, data: PageUpdate, author: str, *, via_review: bool = False, bump: Bump = "patch"
+    ) -> dict:
         """Salva alterações. Rascunhos mudam direto; páginas publicadas (e a publicação de um rascunho) só
-        mudam por uma proposta de revisão aplicada (`via_review=True`), para qualquer papel."""
+        mudam por uma proposta de revisão aplicada (`via_review=True`), para qualquer papel.
+        Cada gravação gera a próxima versão x.y.z conforme `bump` (padrão: patch)."""
         current = self.storage.get_page(page_id)
         if not current:
             raise not_found()
@@ -193,14 +200,18 @@ class DocsService:
             fields["search_text"] = to_search_text(data.content)
         # a nota descreve só esta versão: sem nota, a anterior não deve "vazar" para cá
         note = (data.note or "").strip()
-        fields.update(updated_at=utcnow(), updated_by=author, version=expected + 1, note=note)
+        publishing = bool(fields.get("published")) and not current.get("published", True)
+        semver = bump_semver(
+            current.get("semver") or legacy_semver(current.get("version", 1)), bump, publishing=publishing
+        )
+        fields.update(updated_at=utcnow(), updated_by=author, version=expected + 1, semver=semver, note=note)
 
         try:
             self.storage.update_page(page_id, fields, expected_version=expected)
         except VersionConflict:
             raise _conflict() from None
         if data.content is not None:
-            self.storage.put_content(page_id, data.content, author, version=expected + 1, note=note)
+            self.storage.put_content(page_id, data.content, author, version=expected + 1, semver=semver, note=note)
         if before is not None:
             self._remember_moved(before)
         return self.get_page(page_id, include_drafts=True)
@@ -255,7 +266,7 @@ class DocsService:
                 "Esta página está publicada: carregue a versão no editor e envie como proposta de revisão.",
             )
         entry = next((e for e in self.storage.list_history(page_id) if e["id"] == version_id), None)
-        label = f"v{entry['version']}" if entry and entry.get("version") else "uma versão anterior"
+        label = entry["semver"] if entry and entry.get("semver") else "uma versão anterior"
         return self.update_page(page_id, PageUpdate(content=content, note=f"Restaurada de {label}"), author)
 
     # ------------------------------------------------------------------ importação

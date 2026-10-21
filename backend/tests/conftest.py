@@ -41,7 +41,7 @@ def admin(client):
     return login(client, "admin")
 
 
-def apply_change(client, page_id: str, *, content: str | None = None, fields: dict | None = None):
+def apply_change(client, page_id: str, *, content: str | None = None, fields: dict | None = None, bump: str = "patch"):
     """Muda uma página pelo caminho obrigatório: propor, aprovar (a própria proposta) e aplicar."""
     page = client.get(f"/api/admin/pages/{page_id}").json()
     review = client.post(
@@ -52,6 +52,7 @@ def apply_change(client, page_id: str, *, content: str | None = None, fields: di
             "content": content,
             "fields": fields or {},
             "base_version": page["version"],
+            "bump": bump,
         },
     )
     assert review.status_code == 201, review.text

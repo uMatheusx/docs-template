@@ -13,6 +13,7 @@ from fastapi import HTTPException, status
 from .config import Settings
 from .merge3 import MergeResult, merge3
 from .schemas import PageUpdate, ReviewInput, User
+from .semver import bump_semver, legacy_semver
 from .service import DocsService, not_found
 from .storage import utcnow
 from .tree import build_tree, flatten
@@ -46,10 +47,17 @@ class ReviewService:
         page = (pages or self._pages_by_id()).get(review["page_id"], {})
         return {
             **review,
+            # propostas anteriores ao x.y.z não guardavam essas informações
+            "base_semver": review.get("base_semver") or legacy_semver(review["base_version"]),
+            "bump": review.get("bump", "patch"),
             "page_title": page.get("title", "(página removida)"),
             "page_path": page.get("path", ""),
             "page_published": page.get("published", True),
         }
+
+    @staticmethod
+    def _base_label(review: dict) -> str:
+        return review.get("base_semver") or legacy_semver(review["base_version"])
 
     def _get(self, review_id: str) -> dict:
         review = self.storage.get_review(review_id)
@@ -74,10 +82,23 @@ class ReviewService:
             return None
         return merge3(base, self.storage.get_content(review["page_id"]), proposed)
 
+    @staticmethod
+    def _next_semver(review: dict, page: dict | None) -> str:
+        """Versão que a página terá se a proposta for aplicada agora."""
+        if not page or not page.get("semver"):
+            return ""
+        publishing = bool((review.get("fields") or {}).get("published")) and not page.get("published", True)
+        return bump_semver(page["semver"], review.get("bump", "patch"), publishing=publishing)
+
     def _merge_info(self, review: dict, page: dict | None) -> dict | None:
         if not page or review["status"] not in ACTIVE or not review.get("has_content"):
             return None
-        info = {"base_version": review["base_version"], "current_version": page.get("version", 0)}
+        info = {
+            "base_version": review["base_version"],
+            "current_version": page.get("version", 0),
+            "base_semver": review.get("base_semver") or legacy_semver(review["base_version"]),
+            "current_semver": page.get("semver", ""),
+        }
         if page.get("version") == review["base_version"]:
             return {**info, "state": "current"}
         result = self._merge_with_page(review, page)
@@ -120,6 +141,8 @@ class ReviewService:
             "proposed_content": proposed if proposed is not None else current,
             "current_content": current,
             "current_version": (page or {}).get("version", 0),
+            "current_semver": (page or {}).get("semver", ""),
+            "next_semver": self._next_semver(review, page),
             "page_kind": (page or {}).get("kind", "doc"),
             "merge": self._merge_info(review, page),
         }
@@ -138,6 +161,9 @@ class ReviewService:
             (r for r in self.storage.list_reviews(page_id) if r["author"] == user.username and r["status"] in ACTIVE),
             None,
         )
+        # sem a versão informada, a base é a atual (se coincide) ou a equivalente da revisão antiga
+        base_semver = page.get("semver", "") if page.get("version") == data.base_version else ""
+        base_semver = base_semver or legacy_semver(data.base_version)
         now = utcnow()
         if existing:
             review = existing
@@ -147,6 +173,8 @@ class ReviewService:
                 fields=fields,
                 has_content=data.content is not None,
                 base_version=data.base_version,
+                base_semver=data.base_semver or base_semver,
+                bump=data.bump,
                 status="open",
             )
             event = _event("updated", user.username, "Atualizou a proposta.")
@@ -158,6 +186,8 @@ class ReviewService:
                 "title": data.title.strip(),
                 "description": data.description.strip(),
                 "base_version": data.base_version,
+                "base_semver": data.base_semver or base_semver,
+                "bump": data.bump,
                 "fields": fields,
                 "has_content": data.content is not None,
                 "status": "open",
@@ -218,12 +248,12 @@ class ReviewService:
             if result is None:
                 raise HTTPException(
                     status.HTTP_409_CONFLICT,
-                    f"A página mudou desde a proposta (v{review['base_version']} → v{page.get('version')}) e não foi "
+                    f"A página mudou desde a proposta ({self._base_label(review)} → {page.get('semver')}) e não foi "
                     "possível combinar as mudanças. Peça ao autor para atualizar ou aplique mesmo assim.",
                 )
             if result.clean:
                 content = result.render()
-                how = f" Combinada automaticamente com as mudanças feitas na página desde a v{review['base_version']}."
+                how = f" Combinada automaticamente com as mudanças feitas na página desde a {self._base_label(review)}."
             else:
                 total = len(result.conflicts)
                 if resolutions is None:
@@ -245,10 +275,13 @@ class ReviewService:
             version=page.get("version"),
             note=f"Revisão #{review['number']}: {review['title']}"[:200],
         )
-        saved = self.docs.update_page(review["page_id"], update, review["author"], via_review=True)
+        saved = self.docs.update_page(
+            review["page_id"], update, review["author"], via_review=True, bump=review.get("bump", "patch")
+        )
         review["status"] = "merged"
         review["merged_version"] = saved["version"]
-        self._save(review, _event("merged", user.username, f"Aplicada como v{saved['version']}.{how}"))
+        review["merged_semver"] = saved["semver"]
+        self._save(review, _event("merged", user.username, f"Aplicada como {saved['semver']}.{how}"))
         return self._decorate(review)
 
     def close(self, review_id: str, user: User) -> dict:

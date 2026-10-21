@@ -20,6 +20,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from .config import Settings
+from .semver import legacy_semver
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ META_FIELDS = [
     "updated_at",
     "updated_by",
     "version",
+    "semver",
     "note",
     "kind",
 ]
@@ -59,6 +61,13 @@ def _clean(value: Any) -> Any:
     if isinstance(value, Decimal):
         return int(value) if value % 1 == 0 else float(value)
     return value
+
+
+def _with_semver(page: dict) -> dict:
+    """Páginas gravadas antes do x.y.z ganham a versão equivalente (revisão n → 1.0.n-1)."""
+    if "version" in page and not page.get("semver"):
+        page["semver"] = legacy_semver(page["version"])
+    return page
 
 
 def _ascii(value: str) -> str:
@@ -202,7 +211,7 @@ class Storage:
             if "LastEvaluatedKey" not in resp:
                 break
             kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
-        pages = [_clean(item) for item in items]
+        pages = [_with_semver(_clean(item)) for item in items]
         if not full:
             with self._lock:
                 self._cache = (time.monotonic(), pages)
@@ -211,7 +220,7 @@ class Storage:
 
     def get_page(self, page_id: str) -> dict | None:
         item = self.table.get_item(Key={"id": page_id}).get("Item")
-        return _clean(item) if item and "record" not in item else None
+        return _with_semver(_clean(item)) if item and "record" not in item else None
 
     def put_page(self, item: dict) -> None:
         self.table.put_item(Item=item)
@@ -348,6 +357,7 @@ class Storage:
         author: str,
         *,
         version: int | None = None,
+        semver: str | None = None,
         note: str = "",
         archive: bool = True,
     ) -> None:
@@ -358,6 +368,8 @@ class Storage:
         metadata = {"author": _ascii(author), "saved-at": utcnow()}
         if version is not None:
             metadata["version"] = str(version)
+        if semver:
+            metadata["semver"] = semver
         if note:
             # metadados do S3 só aceitam ASCII: a nota vai codificada como URL
             metadata["note"] = quote(note[:200], safe="")
@@ -402,6 +414,7 @@ class Storage:
                     "author": meta.get("author", ""),
                     "size": obj["Size"],
                     "version": int(version) if version.isdigit() else None,
+                    "semver": meta.get("semver") or (legacy_semver(int(version)) if version.isdigit() else None),
                     "note": unquote(meta.get("note", "")),
                     # quando a versão foi escrita (fallback: quando foi arquivada)
                     "created_at": meta.get("saved-at") or _parse_stamp(version_id) or obj["LastModified"].isoformat(),
