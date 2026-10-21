@@ -122,7 +122,7 @@ export default function DocsLayout() {
   return (
     <DocsBaseContext.Provider value={{ base: "/docs" }}>
     <div className="relative min-h-screen bg-background font-sans text-foreground">
-      <header className="docs-bar sticky top-0 z-40 border-b border-border/70 print:hidden">
+      <header className="docs-bar sticky top-0 z-40 border-b border-border/70">
         <div className="mx-auto flex h-[52px] max-w-[1480px] items-center gap-2 px-4 sm:gap-3">
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Abrir navegação">
             <Menu />
@@ -180,7 +180,7 @@ export default function DocsLayout() {
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-[1480px] gap-8 px-4 pt-6 print:block print:max-w-none print:p-0">
+      <div className="mx-auto flex max-w-[1480px] gap-8 px-4 pt-6">
         <AnimatePresence initial={false}>
           {!(focus && onDocPage) && (
             <motion.aside
@@ -189,7 +189,7 @@ export default function DocsLayout() {
               animate={{ opacity: 1, x: 0, width: 272 }}
               exit={{ opacity: 0, x: -24, width: 0 }}
               transition={{ duration: 0.28, ease: [0.2, 0.7, 0.2, 1] }}
-              className="sticky top-[76px] hidden h-[calc(100vh-92px)] shrink-0 lg:block print:!hidden"
+              className="sticky top-[76px] hidden h-[calc(100vh-92px)] shrink-0 lg:block"
             >
               <div className="flex h-full w-[272px] flex-col border-r border-border/70">
                 {sidebar()}
@@ -209,7 +209,7 @@ export default function DocsLayout() {
           </SheetContent>
         </Sheet>
 
-        <main className="min-w-0 flex-1 pb-16 print:pb-0">
+        <main className="min-w-0 flex-1 pb-16">
           <Outlet
             context={
               {

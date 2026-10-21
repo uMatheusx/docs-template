@@ -147,7 +147,7 @@ export function Mermaid({ chart }: { chart: string }) {
         <span className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
           <Workflow className="h-3.5 w-3.5 text-brand" /> {diagramKind(chart)}
         </span>
-        <span className="flex gap-0.5 print:hidden">
+        <span className="flex gap-0.5">
           <Hint label={showCode ? "Ver diagrama" : "Ver código"}>
             <Button variant="ghost" size="icon-sm" onClick={() => setShowCode((v) => !v)} aria-label="Alternar código">
               <Code2 />

@@ -93,12 +93,12 @@ function CodeBlock({ lang, raw, children }: { lang?: string; raw: string; childr
             aria-pressed={wrap}
             aria-label="Quebrar linhas longas"
             onClick={() => setWrap(!wrap)}
-            className={cn("hover:bg-foreground/10 hover:text-foreground print:hidden", wrap ? "text-brand-ink" : "text-muted-foreground")}
+            className={cn("hover:bg-foreground/10 hover:text-foreground", wrap ? "text-brand-ink" : "text-muted-foreground")}
           >
             <WrapText />
           </Button>
         </Hint>
-        <CopyButton text={raw} className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground print:hidden" />
+        <CopyButton text={raw} className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground" />
       </div>
       <pre
         className={cn(
