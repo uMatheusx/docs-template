@@ -1,0 +1,196 @@
+# Account Hub Docs
+
+Template de documentação moderna e interativa para o **Account Hub**: leitura pública com busca, árvore de navegação, sumário e diagramas Mermaid, e um **painel admin** para editar páginas em markdown, reorganizar a doctree com arrastar-e-soltar, importar `.md`, gerenciar mídia e restaurar versões.
+
+| Camada | Stack |
+| --- | --- |
+| Frontend | React 18 · TypeScript 5 · Vite 6 · React Router 7 · SWR · Tailwind CSS 3 · shadcn/ui · Radix UI · lucide-react · ESLint 10 |
+| Markdown | react-markdown + remark-gfm (tabelas, tasks, footnotes) · alertas `> [!NOTE]` · highlight.js · **Mermaid** · CodeMirror 6 no editor |
+| Backend | Python 3.11 · FastAPI · Uvicorn · httpx · boto3 · PyJWT |
+| Dados | **DynamoDB** (metadados/árvore) · **S3** (markdown, histórico de versões, mídia) |
+| Infra | Docker multi-stage (um container serve API + bundle) · docker-compose com DynamoDB Local + SeaweedFS (S3) |
+
+## Rodando com Docker
+
+```bash
+cp .env.example .env      # ajuste ADMIN_PASSWORD e JWT_SECRET
+docker compose up --build
+```
+
+- Documentação: http://localhost:8000/docs
+- Painel admin: http://localhost:8000/admin (usuário/senha do `.env`)
+- Swagger da API: http://localhost:8000/api/docs
+- S3 local (SeaweedFS): http://localhost:8333 · DynamoDB Local: http://localhost:8001
+
+Na primeira subida a tabela e o bucket são criados e páginas de exemplo são carregadas (`AUTO_CREATE_RESOURCES` / `SEED_ON_STARTUP`).
+
+## Desenvolvimento sem Docker
+
+```bash
+# backend (precisa de um DynamoDB/S3: AWS real, docker compose up -d dynamodb s3, ou moto_server)
+cd backend
+python -m venv .venv && .venv/Scripts/activate     # Linux/macOS: source .venv/bin/activate
+pip install -r requirements-dev.txt
+uvicorn app.main:app --reload                       # lê backend/.env
+
+# frontend (outro terminal) — proxy de /api para :8000
+cd frontend
+npm install
+npm run dev        # http://localhost:5173
+```
+
+Sem Docker, dá para simular a AWS com o moto: `pip install "moto[server]"`, `moto_server -p 5055` e
+`DYNAMODB_ENDPOINT_URL=S3_ENDPOINT_URL=http://127.0.0.1:5055`.
+
+### Qualidade
+
+```bash
+cd frontend && npm run lint && npm run typecheck && npm run build
+cd backend  && ruff check app tests && pytest
+```
+
+## Funcionalidades
+
+Identidade visual com a paleta Itaú: laranja `#EC7000` (marca e ações, com texto marinho para contraste AA), azul-marinho `#003399` (superfícies e tema escuro) e amarelo `#FFC20E` de apoio. Tipografia Plus Jakarta Sans + JetBrains Mono.
+
+**Leitura (`/docs`)**
+- Home em bento grid com busca em destaque, seção principal em card marinho e "atualizadas recentemente"
+- Header flutuante, sidebar com **filtro**, indicador animado da página ativa e **modo foco** (`F`)
+- Página com hero (ícone, descrição, tempo de leitura, autor), **barra de progresso de leitura** e sumário cuja linha acompanha a indentação
+- **Prévia de links internos** ao passar o mouse, lightbox de imagens, código em painel marinho
+- Mermaid com o tema da marca e **explorador com zoom e arraste**
+- **Command Center** (`Ctrl/⌘ K` ou `/`) com páginas, busca no conteúdo, ações e painel de preview
+- Atalhos: `[` `]` página anterior/próxima, `T` tema, `?` lista de atalhos
+
+**Studio (`/admin`)**
+- Rail lateral, Command Center com ações (`N` nova página) e menu de conta com seletor de tema
+- **Visão geral**: métricas animadas, **saúde do conteúdo** (score + checklist: descrições, páginas desatualizadas, rascunhos, ícones), atividade recente, páginas por seção e status/latência do DynamoDB e S3
+- Workspace em **painéis redimensionáveis**: navegador (doctree com arrastar-e-soltar e filtro), editor e inspetor
+- Editor CodeMirror com modos Escrever / Dividir / Ler, **scroll sincronizado** e **comandos `/`** (títulos, listas, alertas, código, tabela, imagem, modelos Mermaid)
+- **Carregar `.md`** arrastando no editor (front matter preenche título/descrição/ícone) ou importando vários arquivos/URL
+- Imagens: `/Imagem`, botão, colar ou arrastar → upload para o S3
+- **Inspetor** (painel lateral; gaveta em telas menores): propriedades, estrutura (outline clicável + métricas do texto) e últimas versões
+- **Histórico de versões**: linha do tempo por dia com número da versão, autor e **descrição da alteração**; diff com números de linha ("vs. anterior" ou "vs. atual"), visualização renderizada, copiar/baixar e restaurar (cria uma nova versão, nada é apagado)
+- **Salvar com descrição** (como mensagem de commit) — gravada nos metadados do S3 junto da versão
+- Mover para… (escolhendo o novo pai), duplicar página, desfazer/refazer na barra
+- **Recuperação de rascunho**: alterações não salvas ficam no navegador e são oferecidas de volta
+- Salvar com `Ctrl/⌘ S`, controle de concorrência otimista (409) e aviso ao sair
+- Mídia em masonry com busca, lightbox, copiar markdown/URL e overlay de upload
+
+**Referência de API (OpenAPI e AsyncAPI)**
+- Páginas do tipo **OpenAPI** (3.x) ou **AsyncAPI** (2.x/3.x): importe o `.yaml`/`.json` ou crie a partir do modelo — o conteúdo é a própria especificação, editada com realce YAML/JSON e prévia ao vivo
+- OpenAPI: índice de operações por tag, parâmetros, corpo e respostas com schemas navegáveis, exemplos gerados e **código pronto** (cURL, JavaScript, Python)
+- **Ambientes**: cada `server` da especificação aparece com nome, URL copiável e descrição. Nomeie com `x-environment` e marque o padrão dos exemplos com `x-default: true`; o leitor escolhe o ambiente e os exemplos de código passam a usar aquela URL
+- AsyncAPI: ambientes (servidores com `title`), canais, operações (publicar/assinar) e mensagens com payload e exemplos
+
+**Especificação dentro de páginas markdown**
+
+Num guia comum, incorpore trechos de uma página de especificação com um bloco de código (ou pelo comando `/` → “Referência OpenAPI”):
+
+````markdown
+```openapi
+ref: /docs/referencia-api/api-rest
+operations:            # "MÉTODO /caminho" ou operationId (opcional)
+  - POST /accounts/{account_id}/roles
+tags: [Contas]         # opcional
+```
+
+```asyncapi
+ref: /docs/referencia-api/eventos
+channels: [roleBindings]   # id ou endereço do canal (opcional)
+```
+````
+
+Sem filtro, a referência inteira é exibida. O trecho acompanha a especificação; um `ref:` para página inexistente ou do tipo errado aparece no checklist de links quebrados. Também dá para colar uma especificação inteira dentro do bloco.
+
+**Fluxo de revisão**
+- Papéis: `admin` faz tudo; `editor` cria rascunhos e propõe mudanças. Usuários extras em `USERS=nome:senha:papel,...`
+- Em páginas publicadas o editor só **envia para revisão** (resumo + motivo); um admin comenta, **aprova** ou **pede alterações** e então **aplica** — a página ganha uma nova versão com o autor da proposta
+- Diff da proposta contra a versão atual, prévia renderizada, aviso quando a página mudou desde a proposta (aplicar mesmo assim é explícito)
+- Badge de revisões abertas no rail e no painel. `REVIEW_SELF_APPROVAL=true` permite aprovar a própria proposta
+
+**Modelos de página**
+- Galeria ao criar página: em branco, guia passo a passo, runbook, ADR, notas de release, visão geral de serviço, FAQ, OpenAPI e AsyncAPI
+- “Salvar como modelo” a partir de qualquer página (guardado no S3); `{{title}}`, `{{date}}` e `{{author}}` são preenchidos na criação
+
+**Links e imagens quebrados**
+- O checklist de qualidade verifica links internos (`/docs/...`) para páginas inexistentes ou em rascunho e imagens/arquivos (`/api/assets/...`) apagados do S3, com página e linha de cada ocorrência — e entram no score de saúde
+
+## Modelo de armazenamento
+
+```mermaid
+flowchart LR
+    UI[React SPA] -->|/api| API[FastAPI]
+    API -->|Scan / Get / Update| DDB[(DynamoDB<br/>tabela de páginas)]
+    API -->|Get / Put / Copy| S3[(S3)]
+    S3 --- C["pages/&lt;id&gt;/content.md"]
+    S3 --- H["pages/&lt;id&gt;/history/&lt;timestamp&gt;.md"]
+    S3 --- M["assets/&lt;uuid&gt;/&lt;arquivo&gt;"]
+    S3 --- P["pages/&lt;id&gt;/proposals/&lt;revisão&gt;.md"]
+    S3 --- T["templates/&lt;id&gt;.json"]
+```
+
+Item do DynamoDB (chave `id`): `title`, `slug`, `parent_id`, `order`, `icon`, `description`, `published`,
+`version`, `kind` (`doc` | `openapi` | `asyncapi`), `created_at`, `updated_at`, `updated_by` e `search_text` (texto puro para a busca).
+Na mesma tabela ficam as propostas de revisão (`record = "review"`) e contadores (`record = "counter"`).
+A URL de cada página é derivada dos slugs dos ancestrais (`/docs/guias/autenticacao`).
+
+## Formato dos arquivos `.md` importados
+
+```markdown
+---
+title: Webhooks
+description: Como receber eventos do Account Hub
+icon: Webhook          # nome de ícone lucide (veja frontend/src/lib/icons.ts)
+slug: webhooks
+published: true        # ou draft: true
+---
+
+# Webhooks
+...
+```
+
+Sem front matter, o título vem do primeiro `# heading` ou do nome do arquivo.
+
+## Produção (AWS)
+
+1. Crie a tabela (chave de partição `id` do tipo String, on-demand) e o bucket — ou suba uma vez com `AUTO_CREATE_RESOURCES=true`.
+2. Dê à role do container as permissões de [`deploy/iam-policy.json`](deploy/iam-policy.json).
+3. Rode a imagem com `DYNAMODB_ENDPOINT_URL` e `S3_ENDPOINT_URL` **vazios**, `COOKIE_SECURE=true`, `ADMIN_PASSWORD` e `JWT_SECRET` fortes e `SEED_ON_STARTUP=false`.
+
+```bash
+docker build -t accounthub-docs .
+docker run -p 8000:8000 --env-file .env.prod accounthub-docs
+```
+
+`PUBLIC_READ=false` exige login também para ler a documentação. Para publicar a partir de CI, faça
+`POST /api/auth/login` e use o `token` retornado como `Authorization: Bearer` nas rotas `/api/admin/*`.
+
+> A busca e a árvore usam `Scan` (com cache curto em memória), adequado para centenas/milhares de páginas.
+> Para volumes maiores, troque a busca por OpenSearch e indexe via DynamoDB Streams.
+
+## Estrutura
+
+```
+backend/
+  app/
+    main.py            # FastAPI, rotas e servidor do bundle (SPA fallback)
+    storage.py         # DynamoDB + S3 (páginas, conteúdo, histórico, mídia)
+    service.py         # árvore, CRUD, mover, busca, importação (httpx)
+    auth.py            # JWT via cookie httpOnly ou Bearer; papéis admin/editor
+    reviews.py         # propostas de revisão (comentar, aprovar, aplicar)
+    library.py         # modelos de página
+    specs.py           # detecção e metadados de OpenAPI/AsyncAPI
+    links.py           # relatório de links e imagens quebrados
+    routers/           # auth, public (leitura) e admin
+    seed_content/      # páginas de exemplo
+  tests/               # pytest + moto
+frontend/
+  src/
+    components/ui/     # shadcn/ui (Radix)
+    components/docs/   # árvore, busca, sumário
+    components/admin/  # editor, doctree DnD, importação, histórico
+    components/markdown/ # renderer, Mermaid, alertas
+    pages/             # docs, login, admin
+Dockerfile · docker-compose.yml · .env.example
+```

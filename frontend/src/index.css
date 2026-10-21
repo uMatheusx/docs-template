@@ -1,0 +1,380 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design system — paleta Itaú
+ *   laranja  #EC7000  → --brand (ações, destaques, foco)
+ *   marinho  #003399  → --navy  (texto sobre laranja, superfícies escuras)
+ *   amarelo  #FFC20E  → apoio pontual
+ * O texto sobre o laranja é marinho (contraste AA); para links usa-se --brand-ink.
+ */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 3% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 3% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 3% 12%;
+    --primary: 28 100% 46%;
+    --primary-foreground: 226 82% 13%;
+    --secondary: 240 11% 96%;
+    --secondary-foreground: 240 3% 12%;
+    --muted: 240 11% 96%;
+    --muted-foreground: 240 2% 44%;
+    --accent: 240 11% 96%;
+    --accent-foreground: 240 3% 12%;
+    --destructive: 356 75% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 6% 84%;
+    --input: 240 6% 84%;
+    --ring: 28 100% 46%;
+    --sidebar: 240 11% 97%;
+    --radius: 0.5rem;
+
+    --brand: 28 100% 46%;
+    --brand-ink: 24 100% 35%;
+    --brand-soft: 30 100% 95%;
+    --navy: 220 100% 30%;
+    --viz-1: #EC7000; /* validado (dataviz) contra superfície clara */
+
+    /* código no tema claro: papel quente + sintaxe escura (contraste ≥ 4.5:1) */
+    --code-bg: 240 11% 96%;
+    --code-border: 240 6% 90%;
+    --code-header: 240 11% 96%;
+    --hl-keyword: 24 100% 35%;
+    --hl-string: 150 65% 26%;
+    --hl-number: 196 85% 30%;
+    --hl-comment: 226 10% 45%;
+    --hl-title: 220 100% 32%;
+    --hl-attr: 280 45% 40%;
+    --hl-text: 226 52% 14%;
+  }
+
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 240 11% 96%;
+    --card: 240 3% 11%;
+    --card-foreground: 240 11% 96%;
+    --popover: 240 3% 11%;
+    --popover-foreground: 240 11% 96%;
+    --primary: 30 100% 52%;
+    --primary-foreground: 226 82% 8%;
+    --secondary: 240 3% 11%;
+    --secondary-foreground: 240 11% 96%;
+    --muted: 240 3% 11%;
+    --muted-foreground: 240 2% 64%;
+    --accent: 240 2% 16%;
+    --accent-foreground: 240 11% 96%;
+    --destructive: 356 70% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 2% 22%;
+    --input: 240 2% 22%;
+    --ring: 30 100% 52%;
+    --sidebar: 240 3% 7%;
+
+    --brand: 30 100% 52%;
+    --brand-ink: 31 100% 63%;
+    --brand-soft: 28 70% 12%;
+    --navy: 220 90% 62%;
+    --viz-1: #E06A00; /* validado (dataviz) contra superfície marinho */
+
+    /* código no tema escuro: painel marinho */
+    --code-bg: 240 3% 11%;
+    --code-border: 240 2% 18%;
+    --code-header: 240 3% 11%;
+    --hl-keyword: 28 100% 62%;
+    --hl-string: 44 100% 66%;
+    --hl-number: 196 90% 70%;
+    --hl-comment: 222 16% 58%;
+    --hl-title: 214 100% 78%;
+    --hl-attr: 160 55% 64%;
+    --hl-text: 220 30% 92%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  :root {
+    --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", system-ui, sans-serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    --font-features: normal;
+  }
+
+  html {
+    scroll-padding-top: 6rem;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    font-optical-sizing: auto;
+    font-feature-settings: var(--font-features);
+  }
+
+  ::selection {
+    background: hsl(var(--brand) / 0.25);
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  kbd {
+    @apply inline-flex h-5 min-w-5 items-center justify-center rounded-[5px] border border-border/80 bg-muted px-1.5 font-sans text-[11px] font-medium text-muted-foreground;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply border bg-background/70 backdrop-blur-xl supports-[backdrop-filter]:bg-background/55;
+  }
+
+  .bg-dots {
+    background-image: radial-gradient(hsl(var(--foreground) / 0.09) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  .bg-noise {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+  }
+
+  .mask-fade-b {
+    mask-image: linear-gradient(to bottom, black 55%, transparent);
+  }
+
+  /* no claro só tons de laranja (contraste); o amarelo entra apenas no escuro */
+  .text-brand-gradient {
+    background-image: linear-gradient(100deg, #b85200 10%, #ec7000 40%, #ff8a1f 65%, #b85200 95%);
+    background-size: 200% auto;
+    @apply animate-shimmer bg-clip-text text-transparent;
+  }
+
+  .dark .text-brand-gradient {
+    background-image: linear-gradient(100deg, #ec7000 10%, #ff9a1f 45%, #ffc20e 70%, #ec7000 95%);
+  }
+
+  /* ícone em destaque: tom suave da cor de marca, sem gradiente */
+  .brand-tile {
+    background: hsl(var(--brand) / 0.12);
+    color: hsl(var(--brand-ink));
+  }
+
+  /* ---------- conteúdo markdown ---------- */
+  .doc-prose {
+    @apply prose prose-zinc max-w-none text-[16px] leading-[1.8] dark:prose-invert;
+    --tw-prose-body: hsl(var(--foreground) / 0.8);
+    --tw-prose-headings: hsl(var(--foreground));
+    --tw-prose-bold: hsl(var(--foreground));
+    --tw-prose-links: hsl(var(--brand-ink));
+    --tw-prose-bullets: hsl(var(--brand));
+    --tw-prose-counters: hsl(var(--brand-ink));
+    --tw-prose-hr: hsl(var(--border));
+    --tw-prose-quotes: hsl(var(--foreground) / 0.8);
+    --tw-prose-quote-borders: hsl(var(--border));
+    --tw-prose-th-borders: hsl(var(--border));
+    --tw-prose-td-borders: hsl(var(--border));
+    --tw-prose-invert-body: hsl(var(--foreground) / 0.8);
+    --tw-prose-invert-headings: hsl(var(--foreground));
+    --tw-prose-invert-links: hsl(var(--brand-ink));
+    --tw-prose-invert-bold: hsl(var(--foreground));
+    --tw-prose-invert-bullets: hsl(var(--brand));
+    --tw-prose-invert-counters: hsl(var(--brand-ink));
+    --tw-prose-invert-hr: hsl(var(--border));
+    --tw-prose-invert-quotes: hsl(var(--foreground) / 0.8);
+    --tw-prose-invert-quote-borders: hsl(var(--border));
+    --tw-prose-invert-th-borders: hsl(var(--border));
+    --tw-prose-invert-td-borders: hsl(var(--border));
+    @apply prose-headings:scroll-mt-28 prose-headings:font-display prose-headings:font-bold prose-headings:tracking-tight;
+    @apply prose-h1:text-3xl prose-h2:mt-16 prose-h2:text-[1.75rem] prose-h2:font-semibold prose-h2:tracking-[-0.02em] prose-h3:mt-10 prose-h3:text-[1.2rem] prose-h3:font-semibold;
+    @apply prose-a:font-semibold prose-a:no-underline prose-a:decoration-2 prose-a:underline-offset-4 hover:prose-a:underline;
+    @apply prose-code:before:content-none prose-code:after:content-none;
+    @apply prose-pre:m-0 prose-pre:bg-transparent prose-pre:p-0;
+    @apply prose-li:my-1.5 prose-hr:my-12;
+  }
+
+  .doc-prose :where(table) {
+    @apply my-0 w-full text-sm;
+  }
+  .doc-prose :where(thead th) {
+    @apply bg-muted/40 px-4 py-3 text-left text-xs font-semibold text-muted-foreground;
+  }
+  .doc-prose :where(tbody td) {
+    @apply px-4 py-2.5;
+  }
+
+  /* fora de blocos .not-prose (ex.: referência de API incorporada, que tem estilo próprio),
+     mas de volta no markdown aninhado dentro deles (descrições das operações) */
+  .doc-prose :where(:not(pre) > code):not(:where(.not-prose *)),
+  .not-prose .doc-prose :where(:not(pre) > code) {
+    @apply rounded-md bg-muted px-1.5 py-0.5 text-[0.85em] font-medium text-foreground;
+  }
+
+  .doc-prose .heading-anchor {
+    @apply ml-2 inline-block text-brand no-underline opacity-0 transition-all hover:no-underline;
+  }
+  .doc-prose :is(h1, h2, h3, h4):hover .heading-anchor {
+    @apply opacity-100;
+  }
+
+  .doc-prose .contains-task-list {
+    @apply list-none pl-0;
+  }
+  .doc-prose .task-list-item input {
+    @apply mr-2 h-4 w-4 translate-y-0.5 accent-[#EC7000];
+  }
+
+  .doc-prose section.footnotes {
+    @apply mt-14 border-t pt-4 text-sm;
+  }
+  .doc-prose section.footnotes h2 {
+    @apply mt-0 text-base;
+  }
+
+  .doc-prose blockquote:not(.callout) {
+    @apply rounded-2xl border-l-0 bg-muted/50 px-5 py-1 font-normal not-italic;
+  }
+}
+
+/* ---------- linguagem Apple: barra translúcida e leitura ---------- */
+/* barra superior: material translúcido só na camada de controles */
+.docs-bar {
+  background: hsl(var(--background) / 0.72);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .docs-bar {
+    background: hsl(var(--background));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+:root .doc-prose {
+  font-size: 17px;
+  line-height: 1.65;
+  letter-spacing: -0.01em;
+  --tw-prose-body: hsl(var(--foreground) / 0.88);
+  --tw-prose-invert-body: hsl(var(--foreground) / 0.88);
+  --tw-prose-bullets: hsl(var(--muted-foreground));
+  --tw-prose-invert-bullets: hsl(var(--muted-foreground));
+  --tw-prose-counters: hsl(var(--muted-foreground));
+  --tw-prose-invert-counters: hsl(var(--muted-foreground));
+}
+:root .doc-prose :is(h2, h3, h4) {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+:root .doc-prose h2 {
+  margin-top: 3.5rem;
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+:root .doc-prose h3 {
+  margin-top: 2.25rem;
+  font-size: 1.3125rem;
+  line-height: 1.3;
+}
+:root .doc-prose a:not(.heading-anchor) {
+  font-weight: 500;
+}
+
+/* ---------- highlight.js (cores vêm dos tokens --hl-* de cada tema) ---------- */
+.hljs { color: hsl(var(--hl-text)); background: transparent; }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta .hljs-keyword, .hljs-doctag { color: hsl(var(--hl-keyword)); }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-template-string, .hljs-selector-attr { color: hsl(var(--hl-string)); }
+.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet { color: hsl(var(--hl-number)); }
+.hljs-comment, .hljs-quote, .hljs-deletion { color: hsl(var(--hl-comment)); font-style: italic; }
+.hljs-title, .hljs-section, .hljs-title.function_, .hljs-function .hljs-title { color: hsl(var(--hl-title)); }
+.hljs-attr, .hljs-attribute, .hljs-variable, .hljs-property, .hljs-params, .hljs-type, .hljs-name, .hljs-tag { color: hsl(var(--hl-attr)); }
+.hljs-meta { color: hsl(var(--hl-comment)); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
+
+/* ---------- CodeMirror ---------- */
+pre, code, .cm-editor { font-variant-ligatures: none; }
+.cm-theme, .cm-editor { height: 100%; }
+.cm-editor { font-size: 13.5px; background: transparent !important; }
+.cm-editor .cm-scroller { font-family: var(--font-mono), ui-monospace, monospace; line-height: 1.7; }
+.cm-editor .cm-content { padding: 20px 0 40vh; }
+.cm-editor .cm-line { padding: 0 24px 0 8px; }
+.cm-editor .cm-gutters { background: transparent !important; border: none !important; }
+.cm-editor .cm-activeLine, .cm-editor .cm-activeLineGutter { background: hsl(var(--brand) / 0.06) !important; }
+.cm-editor.cm-focused { outline: none !important; }
+.cm-editor .cm-cursor { border-left: 2px solid hsl(var(--brand)) !important; }
+.cm-editor .cm-selectionBackground, .cm-editor.cm-focused .cm-selectionBackground { background: hsl(var(--brand) / 0.22) !important; }
+
+/* menu de comandos "/" */
+.cm-tooltip.cm-tooltip-autocomplete {
+  @apply overflow-hidden rounded-xl border bg-popover p-1 font-sans shadow-float;
+}
+.cm-tooltip.cm-tooltip-autocomplete > ul { max-height: 320px !important; min-width: 260px; font-family: inherit !important; }
+.cm-tooltip.cm-tooltip-autocomplete > ul > li { @apply flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] text-foreground; }
+.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] { background: hsl(var(--brand) / 0.14) !important; color: hsl(var(--foreground)) !important; }
+.cm-tooltip-autocomplete .cm-completionLabel { @apply font-semibold; }
+.cm-tooltip-autocomplete .cm-completionDetail { @apply ml-auto pl-4 text-xs not-italic text-muted-foreground; }
+.cm-tooltip-autocomplete .cm-completionMatchedText { text-decoration: none; color: hsl(var(--brand-ink)); }
+.cm-tooltip-autocomplete .cm-completionIcon { display: none; }
+.cm-tooltip.cm-completionInfo { @apply rounded-xl border bg-popover p-3 font-sans text-xs text-muted-foreground shadow-float; }
+
+/* ---------- utilidades de animação respeitando preferências ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
+/* ------------------------------------------------------------------ refinamentos tipográficos
+   Ligados pela pré-visualização de tipografia (html[data-refine="on"]). */
+html[data-refine="on"] :is(h1, h2, h3, h4) {
+  text-wrap: balance;
+}
+html[data-refine="on"] :is(p, li, blockquote, dd) {
+  text-wrap: pretty;
+}
+/* medida de leitura: ~72 caracteres por linha no texto corrido */
+html[data-refine="on"] .doc-prose > :is(p, ul, ol, blockquote, dl) {
+  max-width: 72ch;
+}
+html[data-refine="on"] .doc-prose {
+  font-size: 16px;
+  line-height: 1.7;
+}
+/* números alinhados em tabelas, métricas e versões */
+html[data-refine="on"] :is(td, th, kbd, time, dd, .font-mono) {
+  font-variant-numeric: tabular-nums;
+}
+/* rótulos em caixa-alta: menos espaçamento e peso, mais sóbrios */
+html[data-refine="on"] .uppercase {
+  letter-spacing: 0.06em;
+}
+html[data-refine="on"] .uppercase.font-extrabold {
+  font-weight: 700;
+}
+/* links no texto: sublinhado fino na cor da marca, que acende no hover */
+html[data-refine="on"] .doc-prose a:not(.heading-anchor) {
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: hsl(var(--brand) / 0.4);
+  transition: text-decoration-color 0.15s;
+}
+html[data-refine="on"] .doc-prose a:not(.heading-anchor):hover {
+  text-decoration-color: hsl(var(--brand));
+}
+/* títulos de exibição com tamanho óptico (Bricolage) e aspas penduradas */
+html[data-refine="on"] .font-display {
+  font-optical-sizing: auto;
+}
+html[data-refine="on"] .doc-prose blockquote {
+  hanging-punctuation: first;
+}
+

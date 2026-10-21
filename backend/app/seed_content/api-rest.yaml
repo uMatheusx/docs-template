@@ -1,0 +1,245 @@
+openapi: 3.0.3
+info:
+  title: API REST do Account Hub
+  version: 1.4.0
+  description: |-
+    Contas, organizações e papéis do Account Hub via HTTP/JSON.
+    Autentique com um token Bearer obtido no fluxo OAuth 2.0 (veja Guias › Autenticação).
+# x-environment: nome do ambiente exibido na documentação
+# x-default: ambiente usado nos exemplos de código até o leitor escolher outro
+servers:
+  - url: https://api.dev.accounthub.example.com/v1
+    x-environment: Desenvolvimento
+    description: Integração contínua do time. Dados descartáveis, pode ficar instável.
+  - url: https://api.hml.accounthub.example.com/v1
+    x-environment: Homologação
+    description: Validação antes de cada release, com dados mascarados de produção.
+  - url: https://sandbox.api.accounthub.example.com/v1
+    x-environment: Sandbox
+    x-default: true
+    description: Ambiente de testes para parceiros. Tokens e dados fictícios.
+  - url: https://api.accounthub.example.com/v1
+    x-environment: Produção
+    description: Dados reais. Exige credenciais de produção.
+tags:
+  - name: Contas
+    description: Criação, consulta e ciclo de vida de contas.
+  - name: Organizações
+    description: Organizações e seus membros.
+  - name: Papéis
+    description: Concessão e revogação de papéis.
+security:
+  - bearerAuth: []
+paths:
+  /accounts:
+    get:
+      tags: [Contas]
+      summary: Listar contas
+      operationId: listAccounts
+      parameters:
+        - $ref: "#/components/parameters/OrganizationQuery"
+        - name: status
+          in: query
+          description: Filtra pelo estado da conta.
+          schema:
+            $ref: "#/components/schemas/AccountStatus"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Página de contas.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Account" }
+                  next_cursor:
+                    type: string
+                    nullable: true
+                    example: eyJpZCI6ImFjY18xMjMifQ
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Contas]
+      summary: Criar conta
+      description: Cria uma conta no estado `pending` e envia o e-mail de confirmação.
+      operationId: createAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccountCreate" }
+            example:
+              email: maria@example.com
+              name: Maria Souza
+              organization_id: org_42
+      responses:
+        "201":
+          description: Conta criada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: Já existe uma conta com este e-mail.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /accounts/{account_id}:
+    parameters:
+      - $ref: "#/components/parameters/AccountId"
+    get:
+      tags: [Contas]
+      summary: Consultar conta
+      operationId: getAccount
+      responses:
+        "200":
+          description: A conta.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Contas]
+      summary: Atualizar conta
+      operationId: updateAccount
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, example: Maria S. Souza }
+                status: { $ref: "#/components/schemas/AccountStatus" }
+      responses:
+        "200":
+          description: Conta atualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Contas]
+      summary: Encerrar conta
+      description: Encerra a conta. A operação não pode ser desfeita.
+      operationId: closeAccount
+      responses:
+        "204": { description: Conta encerrada. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /organizations/{organization_id}/members:
+    get:
+      tags: [Organizações]
+      summary: Listar membros
+      operationId: listMembers
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema: { type: string, example: org_42 }
+      responses:
+        "200":
+          description: Membros da organização.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Account" }
+  /accounts/{account_id}/roles:
+    parameters:
+      - $ref: "#/components/parameters/AccountId"
+    post:
+      tags: [Papéis]
+      summary: Conceder papel
+      operationId: grantRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RoleBinding" }
+      responses:
+        "201":
+          description: Papel concedido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleBinding" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    AccountId:
+      name: account_id
+      in: path
+      required: true
+      description: Identificador da conta.
+      schema: { type: string, example: acc_123 }
+    OrganizationQuery:
+      name: organization_id
+      in: query
+      description: Restringe à organização.
+      schema: { type: string, example: org_42 }
+  responses:
+    BadRequest:
+      description: Payload inválido.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Token ausente ou expirado.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Sem permissão no escopo.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Recurso não encontrado.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    AccountStatus:
+      type: string
+      enum: [pending, active, suspended, closed]
+      example: active
+    Account:
+      type: object
+      required: [id, email, status, created_at]
+      properties:
+        id: { type: string, example: acc_123 }
+        email: { type: string, format: email, example: maria@example.com }
+        name: { type: string, example: Maria Souza }
+        status: { $ref: "#/components/schemas/AccountStatus" }
+        organization_id: { type: string, nullable: true, example: org_42 }
+        roles:
+          type: array
+          items: { type: string, example: editor }
+        created_at: { type: string, format: date-time, example: "2026-01-15T10:22:00Z" }
+    AccountCreate:
+      type: object
+      required: [email, name]
+      properties:
+        email: { type: string, format: email, description: E-mail único. }
+        name: { type: string, minLength: 2, maxLength: 120, description: Nome de exibição. }
+        organization_id: { type: string, description: Organização inicial. }
+    RoleBinding:
+      type: object
+      required: [role, scope]
+      properties:
+        role: { type: string, enum: [viewer, editor, owner], example: editor }
+        scope: { type: string, description: "org:<id> ou team:<id>", example: "org:org_42" }
+        expires_at: { type: string, format: date-time, nullable: true }
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: not_found }
+        message: { type: string, example: Conta não encontrada. }

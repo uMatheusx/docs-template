@@ -1,0 +1,51 @@
+# Ambiente local completo: app (API + bundle) + DynamoDB Local + SeaweedFS (S3 compatível).
+# Em produção, rode apenas a imagem "app" apontando para DynamoDB/S3 reais (veja README).
+name: accounthub-docs
+
+services:
+  app:
+    build: .
+    image: accounthub-docs:latest
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-accounthub}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-accounthub-secret}
+      DYNAMODB_ENDPOINT_URL: ${DYNAMODB_ENDPOINT_URL-http://dynamodb:8000}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL-http://s3:8333}
+      AUTO_CREATE_RESOURCES: ${AUTO_CREATE_RESOURCES:-true}
+      SEED_ON_STARTUP: ${SEED_ON_STARTUP:-true}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      - dynamodb
+      - s3
+    restart: unless-stopped
+
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    command: -jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal/data
+    working_dir: /home/dynamodblocal
+    user: root
+    ports:
+      - "8001:8000"
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+    restart: unless-stopped
+
+  # SeaweedFS: servidor de objetos compatível com S3 (substitui o MinIO, que não publica mais imagens).
+  # A app espera o serviço ficar pronto (tenta novamente por ~45s na inicialização).
+  s3:
+    image: chrislusf/seaweedfs:latest
+    command: server -dir=/data -s3 -s3.port=8333 -ip.bind=0.0.0.0 -master.volumeSizeLimitMB=1024 -volume.max=50
+    ports:
+      - "8333:8333"
+    volumes:
+      - s3-data:/data
+    restart: unless-stopped
+
+volumes:
+  dynamodb-data:
+  s3-data:

@@ -1,0 +1,104 @@
+asyncapi: 3.0.0
+info:
+  title: Eventos do Account Hub
+  version: 1.2.0
+  description: |-
+    Eventos publicados quando contas e permissões mudam. Assine os tópicos para manter
+    seus sistemas sincronizados sem fazer polling na API REST.
+defaultContentType: application/json
+servers:
+  desenvolvimento:
+    host: kafka.dev.accounthub.example.com:9092
+    protocol: kafka
+    title: Desenvolvimento
+    description: Cluster do time, sem autenticação. Tópicos recriados a cada deploy.
+  homologacao:
+    host: kafka.hml.accounthub.example.com:9093
+    protocol: kafka-secure
+    title: Homologação
+    description: Validação antes de cada release (SASL/SCRAM).
+  sandbox:
+    host: kafka.sandbox.accounthub.example.com:9093
+    protocol: kafka-secure
+    title: Sandbox
+    description: Eventos fictícios para parceiros testarem consumidores.
+  producao:
+    host: kafka.accounthub.example.com:9093
+    protocol: kafka-secure
+    title: Produção
+    description: Cluster de produção (SASL/SCRAM).
+channels:
+  accountLifecycle:
+    address: accounthub.accounts.lifecycle.v1
+    description: Mudanças de estado das contas.
+    messages:
+      accountCreated: { $ref: "#/components/messages/AccountCreated" }
+      accountSuspended: { $ref: "#/components/messages/AccountSuspended" }
+  roleBindings:
+    address: accounthub.roles.bindings.v1
+    description: Papéis concedidos e revogados.
+    messages:
+      roleGranted: { $ref: "#/components/messages/RoleGranted" }
+operations:
+  onAccountCreated:
+    action: receive
+    channel: { $ref: "#/channels/accountLifecycle" }
+    summary: Conta criada
+    description: Disparado quando uma conta é criada (estado `pending`).
+    messages:
+      - $ref: "#/channels/accountLifecycle/messages/accountCreated"
+  onAccountSuspended:
+    action: receive
+    channel: { $ref: "#/channels/accountLifecycle" }
+    summary: Conta suspensa
+    messages:
+      - $ref: "#/channels/accountLifecycle/messages/accountSuspended"
+  onRoleGranted:
+    action: receive
+    channel: { $ref: "#/channels/roleBindings" }
+    summary: Papel concedido
+    messages:
+      - $ref: "#/channels/roleBindings/messages/roleGranted"
+components:
+  messages:
+    AccountCreated:
+      name: account.created
+      title: Conta criada
+      headers: { $ref: "#/components/schemas/EventHeaders" }
+      payload:
+        type: object
+        required: [account_id, email, occurred_at]
+        properties:
+          account_id: { type: string, example: acc_123 }
+          email: { type: string, format: email, example: maria@example.com }
+          organization_id: { type: string, nullable: true, example: org_42 }
+          occurred_at: { type: string, format: date-time, example: "2026-10-20T13:00:00Z" }
+    AccountSuspended:
+      name: account.suspended
+      title: Conta suspensa
+      headers: { $ref: "#/components/schemas/EventHeaders" }
+      payload:
+        type: object
+        required: [account_id, reason, occurred_at]
+        properties:
+          account_id: { type: string, example: acc_123 }
+          reason: { type: string, enum: [policy_violation, fraud_suspected, owner_request], example: policy_violation }
+          occurred_at: { type: string, format: date-time }
+    RoleGranted:
+      name: role.granted
+      title: Papel concedido
+      headers: { $ref: "#/components/schemas/EventHeaders" }
+      payload:
+        type: object
+        required: [account_id, role, scope]
+        properties:
+          account_id: { type: string, example: acc_123 }
+          role: { type: string, enum: [viewer, editor, owner], example: editor }
+          scope: { type: string, example: "org:org_42" }
+          granted_by: { type: string, example: acc_007 }
+  schemas:
+    EventHeaders:
+      type: object
+      properties:
+        event_id: { type: string, format: uuid, description: Identificador único (use para idempotência). }
+        schema_version: { type: string, example: "1" }
