@@ -200,6 +200,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const preview = useDeferredValue(draft.content);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [loaded, setLoaded] = useState<{ number: number; snapshot: Draft } | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
   const { user } = useSession();
   const isAdmin = user?.role === "admin";
@@ -218,6 +219,9 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const base = toDraft(baseline);
   const changed = FIELDS.filter((f) => draft[f] !== base[f]);
   const dirty = changed.length > 0;
+  // proposta carregada no editor: o que ela guarda já está salvo, então só o que passa disso é "não salvo"
+  const beyondProposal = loaded ? FIELDS.filter((f) => draft[f] !== loaded.snapshot[f]) : [];
+  const unsaved = loaded ? beyondProposal.length > 0 : dirty;
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
   // ------------------------------------------------------------ rascunho local (recuperação)
@@ -225,7 +229,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     if (recovered) return;
     const timer = setTimeout(() => {
       try {
-        if (dirty) {
+        if (unsaved) {
           const local: LocalDraft = { draft, savedAt: new Date().toISOString(), baseVersion: baseline.version };
           localStorage.setItem(localKey(baseline.id), JSON.stringify(local));
         } else {
@@ -236,7 +240,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [draft, dirty, baseline.id, baseline.version, recovered]);
+  }, [draft, unsaved, baseline.id, baseline.version, recovered]);
 
   // ------------------------------------------------------------ salvar
   async function refreshCaches(saved: Page) {
@@ -251,6 +255,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   function reset(next: Page) {
     setBaseline(next);
     setDraft(toDraft(next));
+    setLoaded(null);
   }
 
   async function save(note?: string) {
@@ -268,6 +273,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     for (const field of changed) Object.assign(input, { [field]: draft[field] });
     try {
       const saved = await docsApi.updatePage(baseline.id, input);
+      setLoaded(null);
       setBaseline(saved);
       setDraft((d) => ({ ...d, slug: saved.slug }));
       await refreshCaches(saved);
@@ -327,15 +333,18 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   async function loadProposal(review: Review) {
     try {
       const detail = await api<ReviewDetail>(keys.review(review.id));
-      // só o que a proposta altera (a API devolve null no resto); publicação fica com quem revisa
+      // só o que a proposta altera (a API devolve null no resto). Em rascunho, "publicar" não é um campo do
+      // editor (vai pelo botão Pedir publicação); em página publicada, voltar a rascunho é.
       const fields = Object.fromEntries(
-        Object.entries(detail.fields).filter(([key, value]) => value != null && key !== "published"),
+        Object.entries(detail.fields).filter(([key, value]) => value != null && (key !== "published" || baseline.published)),
       ) as Partial<Draft>;
-      setDraft({
+      const next: Draft = {
         ...toDraft(baseline),
         ...fields,
         content: detail.has_content ? detail.proposed_content : baseline.content,
-      });
+      };
+      setDraft(next);
+      setLoaded({ number: review.number, snapshot: next });
       toast.success(`Proposta #${review.number} carregada no editor`, { description: "Envie de novo para atualizar a proposta." });
     } catch (err) {
       toast.error("Não foi possível carregar a proposta", { description: (err as Error).message });
@@ -382,14 +391,14 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   // ------------------------------------------------------------ proteção contra perda
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      dirty && currentLocation.pathname !== nextLocation.pathname && !nextLocation.state?.skipGuard,
+      unsaved && currentLocation.pathname !== nextLocation.pathname && !nextLocation.state?.skipGuard,
   );
   useEffect(() => {
-    if (!dirty) return;
+    if (!unsaved) return;
     const handler = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty]);
+  }, [unsaved]);
 
   // ------------------------------------------------------------ arquivos (drop / paste / upload / "/Imagem")
   async function handleFiles(files: File[], pos?: number) {
@@ -480,7 +489,13 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
             <span className="truncate">{path}</span>
             <ExternalLink className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
           </Link>
-          <SaveState saving={saving} dirty={dirty} changed={changed.length} version={baseline.version} />
+          <SaveState
+            saving={saving}
+            dirty={unsaved}
+            changed={loaded ? beyondProposal.length : changed.length}
+            version={baseline.version}
+            proposal={loaded?.number}
+          />
 
           <div className="ml-auto flex items-center gap-1.5">
             <div className="relative hidden rounded-xl bg-muted p-1 sm:flex">
@@ -842,8 +857,21 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   );
 }
 
-function SaveState({ saving, dirty, changed, version }: { saving: boolean; dirty: boolean; changed: number; version: number }) {
-  const state = saving ? "saving" : dirty ? "dirty" : "saved";
+function SaveState({
+  saving,
+  dirty,
+  changed,
+  version,
+  proposal,
+}: {
+  saving: boolean;
+  dirty: boolean;
+  changed: number;
+  version: number;
+  /** número da proposta carregada no editor, se houver */
+  proposal?: number;
+}) {
+  const state = saving ? "saving" : dirty ? "dirty" : proposal ? "proposal" : "saved";
   return (
     <AnimatePresence mode="wait" initial={false}>
       <motion.span
@@ -856,13 +884,23 @@ function SaveState({ saving, dirty, changed, version }: { saving: boolean; dirty
           "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold",
           state === "saved" && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
           state === "dirty" && "bg-brand/10 text-brand-ink",
+          state === "proposal" && "bg-sky-500/10 text-sky-700 dark:text-sky-300",
           state === "saving" && "bg-muted text-muted-foreground",
         )}
       >
         {state === "saving" && <Loader2 className="h-3 w-3 animate-spin" />}
         {state === "dirty" && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />}
         {state === "saved" && <Check className="h-3 w-3" />}
-        {state === "saving" ? "Salvando…" : state === "dirty" ? `${changed} alteração(ões) não salva(s)` : `Salvo · v${version}`}
+        {state === "proposal" && <GitPullRequest className="h-3 w-3" />}
+        {state === "saving"
+          ? "Salvando…"
+          : state === "dirty"
+            ? proposal
+              ? `${changed} alteração(ões) além da proposta #${proposal}`
+              : `${changed} alteração(ões) não salva(s)`
+            : state === "proposal"
+              ? `Proposta #${proposal} carregada`
+              : `Salvo · v${version}`}
       </motion.span>
     </AnimatePresence>
   );

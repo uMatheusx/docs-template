@@ -121,3 +121,38 @@ Texto.` } })).json();
   await page.goto(`/docs/${created.slug}`);
   await expect(page.getByRole("heading", { name: "Página não encontrada" })).toBeVisible();
 });
+
+test("proposta carregada no editor não conta como alteração não salva", async ({ page }) => {
+  await loginAs(page, "editora");
+  const arquitetura = await findPage(page.request, "arquitetura");
+  await page.goto(`/admin/pages/${arquitetura.id}`);
+  await appendToEditor(page, "\n\nTexto guardado na proposta.");
+  await page.getByRole("button", { name: "Enviar para revisão" }).click();
+  await page.getByLabel(/O que mudou e por quê/).fill("Proposta para testar o carregamento.");
+  await page.getByRole("button", { name: "Enviar proposta" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+
+  // carregar a proposta: o texto volta ao editor e o estado mostra a proposta, não "não salvo"
+  await page.getByRole("button", { name: "Carregar no editor" }).click();
+  await expect(page.getByText("Texto guardado na proposta.").first()).toBeVisible();
+  await expect(page.getByText(/Proposta #\d+ carregada/)).toBeVisible();
+  await expect(page.getByText(/não salva/)).toHaveCount(0);
+
+  // sair da página não pede confirmação: nada se perde, está na proposta
+  await page.getByRole("link", { name: "Visão geral" }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+
+  // editar além da proposta volta a avisar, e o aviso diz do que se trata
+  await page.goto(`/admin/pages/${arquitetura.id}`);
+  await page.getByRole("button", { name: "Carregar no editor" }).click();
+  await appendToEditor(page, " Mais uma frase.");
+  await expect(page.getByText(/além da proposta #\d+/)).toBeVisible();
+  await page.getByRole("link", { name: "Visão geral" }).click();
+  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await page.getByRole("button", { name: "Sair mesmo assim" }).click();
+
+  // limpa: fecha a proposta para não interferir nos outros testes
+  const reviews = await (await page.request.get(`/api/admin/reviews?state=active&page_id=${arquitetura.id}`)).json();
+  for (const r of reviews) await page.request.post(`/api/admin/reviews/${r.id}/close`);
+});
