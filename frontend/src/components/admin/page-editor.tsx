@@ -18,7 +18,6 @@ import {
   GitPullRequest,
   History,
   LayoutTemplate,
-  LifeBuoy,
   Loader2,
   MoreHorizontal,
   PanelRightClose,
@@ -26,10 +25,10 @@ import {
   PencilLine,
   Save,
   Trash2,
-  X,
+  Undo2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import { Link, useBlocker, useNavigate } from "react-router";
 import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
@@ -42,6 +41,7 @@ import { MovePageDialog } from "@/components/admin/move-page-dialog";
 import { ReviewDialog, type ReviewDraft } from "@/components/admin/review-dialog";
 import { SaveTemplateDialog } from "@/components/admin/save-template-dialog";
 import { VersionHistory } from "@/components/admin/version-history";
+import { clearLocal, readLocal, writeLocal, type LocalDraft } from "@/lib/local-drafts";
 import { legacySemver } from "@/lib/semver";
 import { ApiReference } from "@/components/api/api-reference";
 import { Markdown } from "@/components/markdown/markdown";
@@ -75,7 +75,7 @@ import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useTheme } from "@/hooks/use-theme";
 import { ApiError, api, docsApi, keys, type Page, type PageInput, type Review, type ReviewDetail, type ReviewFields } from "@/lib/api";
 import { REVIEW_STATUS } from "@/lib/reviews";
-import { cn, countWords, downloadText, readingTime, timeAgo } from "@/lib/utils";
+import { cn, countWords, downloadText, readingTime } from "@/lib/utils";
 import { useAdmin } from "@/pages/admin/admin-layout";
 
 type Mode = "write" | "split" | "read";
@@ -99,19 +99,6 @@ const toDraft = (p: Page): Draft => ({
   content: p.content,
 });
 
-interface LocalDraft {
-  draft: Draft;
-  savedAt: string;
-  /** versão da página em que o rascunho se baseia (a mesclagem compara com ela ao aplicar a proposta) */
-  baseVersion: number;
-  /** versão x.y.z dessa base (rascunhos antigos não guardavam: vem da revisão) */
-  baseSemver?: string;
-  /** campos da página nessa versão: permitem separar o que o usuário mudou do que mudou na página depois */
-  baseDraft?: Draft;
-  /** guardado de propósito, pelo botão Salvar: volta sozinho ao abrir a página */
-  explicit?: boolean;
-}
-
 /** O que já está guardado fora do editor: uma proposta carregada ou um "Salvar" local. */
 interface Persisted {
   kind: "proposal" | "local";
@@ -119,18 +106,12 @@ interface Persisted {
   snapshot: Draft;
 }
 
-const localKey = (id: string) => `ah-draft:${id}`;
-
+/** Rascunho local que ainda difere da página (senão não há nada a restaurar). */
 function readLocalDraft(page: Page): LocalDraft | null {
-  try {
-    const raw = localStorage.getItem(localKey(page.id));
-    if (!raw) return null;
-    const local = JSON.parse(raw) as LocalDraft;
-    const base = toDraft(page);
-    return FIELDS.some((f) => local.draft[f] !== base[f]) ? local : null;
-  } catch {
-    return null;
-  }
+  const local = readLocal(page.id);
+  if (!local) return null;
+  const base = toDraft(page);
+  return FIELDS.some((f) => local.draft[f] !== base[f]) ? local : null;
 }
 
 /**
@@ -204,24 +185,25 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const { resolved } = useTheme();
   const { mutate } = useSWRConfig();
   const [baseline, setBaseline] = useState(page);
-  // rascunho local salvo de propósito (botão Salvar) volta sozinho; o automático pede confirmação (faixa abaixo)
+  // o que a pessoa estava fazendo volta sozinho ao abrir a página: tudo é guardado neste navegador enquanto edita
   const [stored] = useState<LocalDraft | null>(() => readLocalDraft(page));
-  const restored = stored?.explicit ? stored : null;
-  const [draft, setDraft] = useState<Draft>(() => (restored ? rebaseLocal(restored, page) : toDraft(page)));
-  const [recovered, setRecovered] = useState<LocalDraft | null>(restored ? null : stored);
+  const [draft, setDraft] = useState<Draft>(() => (stored ? rebaseLocal(stored, page) : toDraft(page)));
   // versão (e campos) em que o rascunho se baseia: é com ela que a mesclagem compara ao aplicar a proposta
   const [origin, setOrigin] = useState<{ version: number; semver: string; fields: Draft }>(() =>
-    restored
+    stored
       ? {
-          version: restored.baseVersion,
-          semver: restored.baseSemver ?? legacySemver(restored.baseVersion),
-          fields: restored.baseDraft ?? toDraft(page),
+          version: stored.baseVersion,
+          semver: stored.baseSemver ?? legacySemver(stored.baseVersion),
+          fields: stored.baseDraft ?? toDraft(page),
         }
       : { version: page.version, semver: page.semver, fields: toDraft(page) },
   );
+  // "Salvar" explícito = salvo localmente (pronto para enviar); o restante restaurado é "modificado, não salvo"
   const [persisted, setPersisted] = useState<Persisted | null>(() =>
-    restored ? { kind: "local", snapshot: rebaseLocal(restored, page) } : null,
+    stored?.explicit ? { kind: "local", snapshot: rebaseLocal(stored, page) } : null,
   );
+  // o navegador recusou guardar (cheio/bloqueado): sem rede de segurança, sair da página volta a pedir confirmação
+  const [localFailed, setLocalFailed] = useState(false);
   // mover a página na árvore chega pela prop: sincroniza caminho/pai sem perder o rascunho
   const [syncedPage, setSyncedPage] = useState(page);
   if (page !== syncedPage) {
@@ -248,6 +230,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const [reviewOpen, setReviewOpen] = useState(false);
   // proposta que o usuário quer carregar, esperando a confirmação de que o texto atual pode ser substituído
   const [confirmLoad, setConfirmLoad] = useState<Review | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
   const { user } = useSession();
   const isAdmin = user?.role === "admin";
@@ -271,44 +254,59 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const unsaved = persisted ? beyondPersisted.length > 0 : dirty;
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
-  // ------------------------------------------------------------ rascunho local (recuperação e "Salvar")
+  // ------------------------------------------------------------ rascunho local (automático e "Salvar")
   useEffect(() => {
-    if (!restored) return;
+    if (!stored) return;
+    const older = stored.baseVersion !== page.version;
     toast.info("Rascunho local restaurado", {
       id: "local-draft-restored",
-      description:
-        restored.baseVersion !== page.version
-          ? `Feito sobre a versão ${restored.baseSemver ?? legacySemver(restored.baseVersion)}; a página está na ${page.semver}. As mudanças se combinam quando a proposta for aplicada.`
-          : "As alterações salvas neste navegador voltaram ao editor. Envie para revisão quando estiver pronto.",
+      description: older
+        ? `Feito sobre a versão ${stored.baseSemver ?? legacySemver(stored.baseVersion)}; a página está na ${page.semver}. As mudanças se combinam quando a proposta for aplicada.`
+        : stored.explicit
+          ? "As alterações salvas neste navegador voltaram ao editor. Envie para revisão quando estiver pronto."
+          : "As alterações que você estava fazendo voltaram ao editor, ainda não salvas. Use Salvar para guardá-las e depois envie para revisão.",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- só ao abrir a página
   }, []);
 
+  // sempre o estado mais recente, para gravar no último instante (ao sair da página ou fechar a aba)
+  const latest = useRef({ draft, dirty, unsaved, persisted, origin });
   useEffect(() => {
-    if (recovered) return;
-    const timer = setTimeout(() => {
-      try {
-        // "Salvar" local: guarda enquanto houver diferença para a página; o resto só enquanto não estiver salvo
-        const keep = persisted?.kind === "local" ? dirty : unsaved;
-        if (keep) {
-          const local: LocalDraft = {
-            draft,
-            savedAt: new Date().toISOString(),
-            baseVersion: origin.version,
-            baseSemver: origin.semver,
-            baseDraft: origin.fields,
-            explicit: persisted?.kind === "local" && !unsaved,
-          };
-          localStorage.setItem(localKey(baseline.id), JSON.stringify(local));
-        } else {
-          localStorage.removeItem(localKey(baseline.id));
-        }
-      } catch {
-        /* armazenamento indisponível */
-      }
-    }, 600);
+    latest.current = { draft, dirty, unsaved, persisted, origin };
+  });
+  const pageId = baseline.id;
+  const flushLocal = useCallback(() => {
+    const now = latest.current;
+    // "Salvar" local: guarda enquanto houver diferença para a página; o resto só enquanto não estiver guardado
+    const keep = now.persisted?.kind === "local" ? now.dirty : now.unsaved;
+    if (!keep) {
+      clearLocal(pageId);
+      setLocalFailed(false);
+      return;
+    }
+    const result = writeLocal(pageId, {
+      draft: now.draft,
+      savedAt: new Date().toISOString(),
+      baseVersion: now.origin.version,
+      baseSemver: now.origin.semver,
+      baseDraft: now.origin.fields,
+      explicit: now.persisted?.kind === "local" && !now.unsaved,
+    });
+    setLocalFailed(result !== "ok");
+  }, [pageId]);
+
+  useEffect(() => {
+    const timer = setTimeout(flushLocal, 400);
     return () => clearTimeout(timer);
-  }, [draft, dirty, unsaved, persisted, origin, baseline.id, recovered]);
+  }, [draft, dirty, unsaved, persisted, origin, flushLocal]);
+
+  useEffect(() => {
+    window.addEventListener("pagehide", flushLocal);
+    return () => {
+      window.removeEventListener("pagehide", flushLocal);
+      flushLocal(); // saindo da página: grava o que ainda estava no intervalo de espera
+    };
+  }, [flushLocal]);
 
   // ------------------------------------------------------------ salvar
   async function refreshCaches(saved: Page) {
@@ -330,19 +328,21 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   /** Páginas publicadas: "Salvar" guarda neste navegador (para trocar de página sem perder nada) e não publica. */
   function saveLocal() {
     if (!unsaved) return false;
-    try {
-      const local: LocalDraft = {
-        draft,
-        savedAt: new Date().toISOString(),
-        baseVersion: origin.version,
-        baseSemver: origin.semver,
-        baseDraft: origin.fields,
-        explicit: true,
-      };
-      localStorage.setItem(localKey(baseline.id), JSON.stringify(local));
-    } catch {
+    const result = writeLocal(baseline.id, {
+      draft,
+      savedAt: new Date().toISOString(),
+      baseVersion: origin.version,
+      baseSemver: origin.semver,
+      baseDraft: origin.fields,
+      explicit: true,
+    });
+    if (result !== "ok") {
+      setLocalFailed(true);
       toast.error("Não foi possível salvar neste navegador", {
-        description: "O armazenamento local está indisponível. Envie para revisão para não perder as alterações.",
+        description:
+          result === "full"
+            ? "O armazenamento do navegador está cheio. Envie para revisão para não perder as alterações."
+            : "O armazenamento local está indisponível. Envie para revisão para não perder as alterações.",
       });
       return false;
     }
@@ -425,11 +425,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         semver,
       });
       // a proposta guarda as alterações: o editor volta para a versão publicada
-      try {
-        localStorage.removeItem(localKey(baseline.id));
-      } catch {
-        /* armazenamento indisponível */
-      }
+      clearLocal(baseline.id);
       reset(baseline);
       refreshReviews();
       mutate(keys.stats);
@@ -514,16 +510,18 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   useModHotkey("s", () => void save());
 
   // ------------------------------------------------------------ proteção contra perda
+  // normalmente nada se perde ao sair (tudo é guardado neste navegador); só pergunta se a gravação local falhou
+  const atRisk = localFailed && unsaved;
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      unsaved && currentLocation.pathname !== nextLocation.pathname && !nextLocation.state?.skipGuard,
+      atRisk && currentLocation.pathname !== nextLocation.pathname && !nextLocation.state?.skipGuard,
   );
   useEffect(() => {
-    if (!unsaved) return;
+    if (!atRisk) return;
     const handler = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [unsaved]);
+  }, [atRisk]);
 
   // ------------------------------------------------------------ arquivos (drop / paste / upload / "/Imagem")
   async function handleFiles(files: File[], pos?: number) {
@@ -676,6 +674,9 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 <DropdownMenuItem onSelect={() => openHistory()}>
                   <History /> Histórico de versões
                 </DropdownMenuItem>
+                <DropdownMenuItem disabled={!dirty} onSelect={() => setConfirmDiscard(true)}>
+                  <Undo2 /> Descartar alterações…
+                </DropdownMenuItem>
                 <DropdownMenuItem disabled={unsaved} onSelect={openReview}>
                   <GitPullRequest /> Enviar para revisão…{unsaved && <span className="ml-auto text-xs">salve antes</span>}
                 </DropdownMenuItem>
@@ -737,51 +738,6 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
           aria-label="Título"
         />
       </header>
-
-      <AnimatePresence>
-        {recovered && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden border-b bg-brand-soft"
-          >
-            <div className="flex flex-wrap items-center gap-3 px-5 py-2.5 text-sm">
-              <LifeBuoy className="h-4 w-4 text-brand-ink" />
-              <span className="font-semibold">Encontramos alterações não salvas de {timeAgo(recovered.savedAt)}.</span>
-              {recovered.baseVersion !== baseline.version && (
-                <span className="text-xs text-muted-foreground">(feitas sobre a versão {recovered.baseSemver ?? legacySemver(recovered.baseVersion)}; a atual é {baseline.semver})</span>
-              )}
-              <span className="ml-auto flex gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setDraft(rebaseLocal(recovered, baseline));
-                    setOrigin({
-                      version: recovered.baseVersion,
-                      semver: recovered.baseSemver ?? legacySemver(recovered.baseVersion),
-                      fields: recovered.baseDraft ?? toDraft(baseline),
-                    });
-                    setRecovered(null);
-                  }}
-                >
-                  Recuperar
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    localStorage.removeItem(localKey(baseline.id));
-                    setRecovered(null);
-                  }}
-                >
-                  <X /> Descartar
-                </Button>
-              </span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {(reviewOnly || (pageReviews?.length ?? 0) > 0) && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-sky-500/[0.07] px-5 py-2 text-sm">
@@ -1018,12 +974,36 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Descartar as alterações?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O editor volta ao que está na página (versão {baseline.semver}). O que você escreveu aqui e o que foi guardado neste
+              navegador serão apagados. Isso não pode ser desfeito.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Manter as alterações</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                reset(baseline);
+                clearLocal(baseline.id);
+                toast.success("Alterações descartadas");
+              }}
+            >
+              Descartar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={blocker.state === "blocked"}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Sair sem salvar?</AlertDialogTitle>
             <AlertDialogDescription>
-              Há alterações não salvas. Elas continuam guardadas neste navegador e poderão ser recuperadas quando você voltar.
+              O navegador não conseguiu guardar as alterações que ainda não foram salvas. Se sair agora, elas serão perdidas.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

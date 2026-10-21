@@ -178,10 +178,11 @@ test("proposta carregada no editor não conta como alteração não salva", asyn
   await page.getByRole("button", { name: "Carregar no editor" }).click();
   await expect(confirm).toHaveCount(0);
 
+  // sair com alterações não pergunta nada: elas ficam guardadas neste navegador e voltam sozinhas
   await appendToEditor(page, " Terceira frase.");
   await page.getByRole("link", { name: "Visão geral" }).click();
-  await expect(page.getByRole("alertdialog")).toBeVisible();
-  await page.getByRole("button", { name: "Sair mesmo assim" }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
 
   // limpa: fecha a proposta para não interferir nos outros testes
   const reviews = await (await page.request.get(`/api/admin/reviews?state=active&page_id=${arquitetura.id}`)).json();

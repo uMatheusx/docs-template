@@ -254,3 +254,36 @@ test("trocar a versão à mão: o autor muda o y, o revisor muda o x ao aplicar"
   await expect(readerPage.getByText(/Atualizado em .*, versão 2\.4\.0/)).toBeVisible();
   await reader.close();
 });
+
+test("o que está sendo editado é guardado sozinho: sair e voltar traz de volta, ainda como não salvo", async ({ page }) => {
+  await loginAs(page, "admin");
+  const faq = await findPage(page.request, "faq");
+  await page.goto(`/admin/pages/${faq.id}`);
+  await appendToEditor(page, "\n\nTexto digitado, sem apertar Salvar.");
+
+  // sair logo em seguida (antes do intervalo da gravação automática) não pergunta nada
+  await page.getByRole("link", { name: "Visão geral" }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+
+  // voltar: o texto está lá, sem faixa de "Recuperar", e continua marcado como não salvo
+  await page.goto(`/admin/pages/${faq.id}`);
+  await expect(page.getByText("Texto digitado, sem apertar Salvar.").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Recuperar" })).toHaveCount(0);
+  await expect(page.getByText(/alteração\(ões\) não salva\(s\)/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Enviar para revisão" })).toBeDisabled(); // ainda precisa Salvar
+
+  // salvar passa para "salvo neste navegador" e libera o envio
+  await page.getByRole("button", { name: /^Salvar/ }).click();
+  await expect(page.getByText("Salvo neste navegador · não enviado")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Enviar para revisão" })).toBeEnabled();
+
+  // descartar volta ao que está publicado e apaga o que estava guardado
+  await page.getByRole("button", { name: "Mais ações" }).click();
+  await page.getByRole("menuitem", { name: /Descartar alterações/ }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Descartar" }).click();
+  await expect(page.getByText("Texto digitado, sem apertar Salvar.")).toHaveCount(0);
+  await page.goto(`/admin/pages/${faq.id}`);
+  await expect(page.getByText("Rascunho local restaurado")).toHaveCount(0);
+  await expect(page.getByText("Texto digitado, sem apertar Salvar.")).toHaveCount(0);
+});
