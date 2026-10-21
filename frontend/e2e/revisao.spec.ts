@@ -460,6 +460,10 @@ ${texto}`);
   await expect(page.getByText("Lote um.").first()).toBeVisible();
   await expect(page.getByText("Lote dois.").first()).toBeVisible();
 
+  // cada página tem o diff e a prévia, como numa proposta de uma página só
+  await page.getByRole("tab", { name: "Visualizar" }).first().click();
+  await expect(page.locator(".doc-prose").getByText(/Lote (um|dois)./)).toBeVisible();
+
   // não dá para aplicar antes de aprovar; aprovar vale para as duas
   await expect(page.getByRole("button", { name: "Aplicar tudo" })).toHaveCount(0);
   await page.getByRole("tab", { name: /Conversa/ }).click();

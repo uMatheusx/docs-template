@@ -1,10 +1,12 @@
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, FilePen, GitMerge, Layers, Loader2, MessageSquare, TriangleAlert, XCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, Eye, FilePen, GitMerge, Layers, Loader2, MessageSquare, PenLine, TriangleAlert, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 
 import { DiffView } from "@/components/admin/diff-view";
+import { ApiReference } from "@/components/api/api-reference";
+import { Markdown } from "@/components/markdown/markdown";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,7 +15,7 @@ import { useSession } from "@/hooks/use-session";
 import { ApiError, docsApi, keys, type BatchDetail, type ReviewDetail } from "@/lib/api";
 import { collapseDiff, diffLines, diffStats } from "@/lib/diff";
 import { ACTIVE_STATUSES, describeFields } from "@/lib/reviews";
-import { cn, timeAgo } from "@/lib/utils";
+import { cn, splitLeadingH1, timeAgo } from "@/lib/utils";
 import { Timeline } from "@/pages/admin/review-detail";
 import { ReviewStatusBadge } from "@/pages/admin/reviews";
 
@@ -28,6 +30,7 @@ function PageChanges({ review, open, onToggle }: { review: ReviewDetail; open: b
     const ops = diffLines(review.current_content, shownContent(review));
     return { hunks: collapseDiff(ops), stats: diffStats(ops) };
   }, [open, review]);
+  const [view, setView] = useState<"diff" | "preview">("diff");
   const fields = describeFields(review.fields);
   const conflicts = active && review.merge?.state === "conflicts";
   const unavailable = active && review.merge?.state === "unavailable";
@@ -83,22 +86,54 @@ function PageChanges({ review, open, onToggle }: { review: ReviewDetail; open: b
           )}
           {diff && (
             <>
-              <div className="flex items-center gap-2 px-4 pt-3 text-xs">
+              <div className="flex flex-wrap items-center gap-2 px-4 pt-3 text-xs">
+                <div role="tablist" aria-label={`Ver ${review.page_title}`} className="flex rounded-lg bg-muted p-0.5">
+                  {(
+                    [
+                      ["diff", "Alterações", PenLine],
+                      ["preview", "Visualizar", Eye],
+                    ] as const
+                  ).map(([id, label, Icon]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="tab"
+                      aria-selected={view === id}
+                      onClick={() => setView(id)}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md px-2.5 py-1 font-bold transition-colors",
+                        view === id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5" /> {label}
+                    </button>
+                  ))}
+                </div>
                 <span className="rounded-full bg-emerald-500/12 px-2 py-0.5 font-bold text-emerald-700 dark:text-emerald-300">+{diff.stats.added}</span>
                 <span className="rounded-full bg-red-500/12 px-2 py-0.5 font-bold text-red-700 dark:text-red-300">−{diff.stats.removed}</span>
                 <Link to={`/admin/pages/${review.page_id}`} className="ml-auto inline-flex items-center gap-1 font-semibold text-muted-foreground hover:text-foreground">
                   <FilePen className="h-3.5 w-3.5" /> Abrir página
                 </Link>
               </div>
-              <div className="max-h-[60vh] overflow-auto">
-                <DiffView
-                  hunks={diff.hunks}
-                  empty={review.has_content ? "O conteúdo proposto é igual ao atual." : "Esta página só tem mudanças de propriedades."}
-                  legend={
-                    review.status === "merged" ? `Antes de aplicar → ${review.merged_semver}` : `Versão ${review.current_semver} → proposta`
-                  }
-                />
-              </div>
+              {view === "diff" ? (
+                <div className="mt-3 max-h-[60vh] overflow-auto">
+                  <DiffView
+                    hunks={diff.hunks}
+                    empty={review.has_content ? "O conteúdo proposto é igual ao atual." : "Esta página só tem mudanças de propriedades."}
+                    legend={
+                      review.status === "merged" ? `Antes de aplicar → ${review.merged_semver}` : `Versão ${review.current_semver} → proposta`
+                    }
+                  />
+                </div>
+              ) : (
+                <div className="m-4 rounded-2xl border bg-card p-6 sm:p-8">
+                  {review.page_kind === "doc" ? (
+                    <Markdown content={splitLeadingH1(shownContent(review)).body} />
+                  ) : (
+                    <ApiReference kind={review.page_kind} content={shownContent(review)} />
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
