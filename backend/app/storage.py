@@ -8,7 +8,7 @@ import re
 import threading
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -99,6 +99,8 @@ class Storage:
             s3_config = Config(retries=retries)
         self.s3 = session.client("s3", endpoint_url=settings.s3_endpoint_url, config=s3_config)
         self._cache: tuple[float, list[dict]] | None = None
+        # índice de busca: páginas completas já preparadas; descartado a cada gravação desta instância
+        self._search_cache: tuple[float, list[dict]] | None = None
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------ infra
@@ -164,6 +166,21 @@ class Storage:
     def invalidate(self) -> None:
         with self._lock:
             self._cache = None
+            self._search_cache = None
+
+    def search_documents(self, prepare: Callable[[dict], dict]) -> list[dict]:
+        """Páginas completas transformadas por `prepare`, montadas com um único Scan e reaproveitadas.
+
+        Gravações desta instância descartam o índice na hora; as de outras instâncias aparecem
+        em até SEARCH_CACHE_TTL_SECONDS.
+        """
+        with self._lock:
+            if self._search_cache and time.monotonic() - self._search_cache[0] < self.settings.search_cache_ttl_seconds:
+                return self._search_cache[1]
+        docs = [prepare(page) for page in self.list_pages(full=True)]
+        with self._lock:
+            self._search_cache = (time.monotonic(), docs)
+        return docs
 
     def list_pages(self, *, full: bool = False) -> list[dict]:
         """Lista todas as páginas. Sem `full`, retorna só metadados (com cache curto)."""

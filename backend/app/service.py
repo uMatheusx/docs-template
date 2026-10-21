@@ -8,7 +8,7 @@ import uuid
 import httpx
 from fastapi import HTTPException, status
 
-from .markdown_utils import first_heading, parse_frontmatter, slugify, to_search_text
+from .markdown_utils import first_heading, fold, parse_frontmatter, slugify, to_search_text
 from .schemas import PageCreate, PageUpdate
 from .specs import detect_kind, parse_spec, spec_info
 from .storage import Storage, VersionConflict, utcnow
@@ -50,19 +50,20 @@ class DocsService:
         return page
 
     def search(self, query: str, *, include_drafts: bool, limit: int = 20) -> list[dict]:
-        terms = [t for t in re.split(r"\s+", query.lower().strip()) if t]
+        # sem acentos dos dois lados: "autenticacao" encontra "Autenticação"
+        terms = [t for t in re.split(r"\s+", fold(query).strip()) if t]
         if not terms:
             return []
         visible = {node["id"]: node for node, _ in flatten(self.tree(include_drafts=include_drafts))}
         results = []
-        for page in self.storage.list_pages(full=True):
+        for page in self.storage.search_documents(_search_document):
             node = visible.get(page["id"])
             if not node:
                 continue
-            title = page["title"].lower()
-            description = page.get("description", "").lower()
-            text = page.get("search_text", "")
-            lower = text.lower()
+            title = page["title_folded"]
+            description = page["description_folded"]
+            text = page["text"]
+            lower = page["text_folded"]
             score = 0.0
             for term in terms:
                 hits = lower.count(term)
@@ -308,6 +309,20 @@ def _unique_slug(value: str, siblings: list[dict]) -> str:
 def _raw_github_url(url: str) -> str:
     match = re.match(r"https://github\.com/([^/]+)/([^/]+)/blob/(.+)", url)
     return f"https://raw.githubusercontent.com/{match[1]}/{match[2]}/{match[3]}" if match else url
+
+
+def _search_document(page: dict) -> dict:
+    """Página pronta para a busca: textos originais e versões dobradas (fold), de mesmo comprimento."""
+    text = page.get("search_text", "")
+    return {
+        "id": page["id"],
+        "title": page["title"],
+        "description": page.get("description", ""),
+        "text": text,
+        "title_folded": fold(page["title"]),
+        "description_folded": fold(page.get("description", "")),
+        "text_folded": fold(text),
+    }
 
 
 def _snippet(text: str, lower: str, terms: list[str], radius: int = 90) -> str:

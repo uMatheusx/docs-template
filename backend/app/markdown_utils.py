@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from functools import lru_cache
 
 FRONTMATTER_RE = re.compile(r"\A---\s*\r?\n(.*?)\r?\n---\s*(?:\r?\n|\Z)", re.S)
 HEADING_RE = re.compile(r"^#\s+(.+?)\s*#*\s*$", re.M)
@@ -10,6 +11,21 @@ def slugify(value: str) -> str:
     value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
     value = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return value[:80] or "pagina"
+
+
+@lru_cache(maxsize=4096)
+def _fold_char(char: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", char.lower())
+    return decomposed[0] if decomposed else char
+
+
+def fold(text: str) -> str:
+    """Minúsculas e sem acentos, com o mesmo comprimento do original.
+
+    Cada caractere vira exatamente um, então uma posição encontrada no texto dobrado
+    vale também no texto original (usado para montar o trecho dos resultados de busca).
+    """
+    return "".join(_fold_char(char) for char in text)
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:

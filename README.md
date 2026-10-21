@@ -113,6 +113,10 @@ Sem filtro, a referência inteira é exibida. O trecho acompanha a especificaç�
 - Galeria ao criar página: em branco, guia passo a passo, runbook, ADR, notas de release, visão geral de serviço, FAQ, OpenAPI e AsyncAPI
 - “Salvar como modelo” a partir de qualquer página (guardado no S3); `{{title}}`, `{{date}}` e `{{author}}` são preenchidos na criação
 
+**Busca**
+- Ignora acentos e maiúsculas ("autenticacao" encontra "Autenticação")
+- Índice em memória montado com um único Scan e reaproveitado entre buscas; gravações da própria instância o atualizam na hora e as de outras instâncias aparecem em até `SEARCH_CACHE_TTL_SECONDS` (padrão 60)
+
 **Links e imagens quebrados**
 - O checklist de qualidade verifica links internos (`/docs/...`) para páginas inexistentes ou em rascunho e imagens/arquivos (`/api/assets/...`) apagados do S3, com página e linha de cada ocorrência — e entram no score de saúde
 

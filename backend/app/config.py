@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     auto_create_resources: bool = False
     seed_on_startup: bool = False
     cache_ttl_seconds: float = 5.0
+    # validade do índice de busca para mudanças feitas por OUTRAS instâncias (as desta são imediatas)
+    search_cache_ttl_seconds: float = 60.0
 
     # Autenticação
     admin_username: str = "admin"
