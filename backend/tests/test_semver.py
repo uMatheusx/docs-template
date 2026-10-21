@@ -23,11 +23,11 @@ def test_seeded_published_pages_start_at_1_0_0(admin):
     assert faq["semver"] == "1.0.0"
 
 
-def test_each_direct_draft_save_bumps_the_patch(admin):
+def test_direct_draft_saves_keep_the_version(admin):
     page = new_draft(admin)
     v2 = admin.put(f"/api/admin/pages/{page['id']}", json={"content": "# dois", "version": 1}).json()
     v3 = admin.put(f"/api/admin/pages/{page['id']}", json={"description": "x", "version": 2}).json()
-    assert (v2["semver"], v3["semver"]) == ("0.1.1", "0.1.2")
+    assert (v2["semver"], v3["semver"]) == ("0.1.0", "0.1.0")  # salvar rascunho não gera versão x.y.z
     assert (v2["version"], v3["version"]) == (2, 3)  # a revisão interna continua contando
 
 

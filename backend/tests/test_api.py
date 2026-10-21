@@ -40,19 +40,12 @@ def test_crud_versioning_and_history(admin):
     conflict = admin.put(f"/api/admin/pages/{page['id']}", json={"content": "# stale", "version": 1})
     assert conflict.status_code == 409
 
+    # salvar um rascunho só sobrescreve: sem versão x.y.z nova, sem nota e sem entrada no histórico
     noted = admin.put(
         f"/api/admin/pages/{page['id']}", json={"content": "# v5", "note": "Revisão técnica", "version": 4}
-    )
-    assert noted.json()["note"] == "Revisão técnica"
-
-    history = admin.get(f"/api/admin/pages/{page['id']}/history").json()
-    assert len(history) == 4  # v1 (criação), v2, v3 e v4 arquivados
-    # o histórico guarda número da versão e nota de cada snapshot (mais recente primeiro)
-    assert [h["version"] for h in history] == [4, 3, 2, 1]
-    assert history[-1]["note"] == "Página criada"
-    restored = admin.post(f"/api/admin/pages/{page['id']}/history/{history[-1]['id']}/restore").json()
-    assert restored["content"].startswith("# Página Nova")
-    assert restored["note"] == "Restaurada de 0.1.0"
+    ).json()
+    assert noted["semver"] == "0.1.0" and noted["note"] == "" and noted["version"] == 5
+    assert admin.get(f"/api/admin/pages/{page['id']}/history").json() == []
 
     # rascunhos não aparecem para leitores anônimos
     admin.post("/api/auth/logout")

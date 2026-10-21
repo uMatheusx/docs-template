@@ -24,7 +24,6 @@ import {
   PencilLine,
   FileDiff,
   RotateCcw,
-  ChevronDown,
   Save,
   Trash2,
   Undo2,
@@ -70,7 +69,6 @@ import {
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Hint } from "@/components/ui/tooltip";
 import { modKey, useModHotkey } from "@/hooks/use-hotkey";
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -345,7 +343,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
       setBaseline(saved);
       setDraft((d) => ({ ...d, slug: saved.slug }));
       await refreshCaches(saved);
-      toast.success(`Versão ${saved.semver} salva`, { description: saved.note || "Guardada no S3 · veja em Histórico" });
+      toast.success("Rascunho salvo", { description: "Fica só a última versão; o histórico começa quando a página for publicada." });
       return true;
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -658,13 +656,6 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-            {!baseline.published && (
-              <span title={unsaved ? "Salve antes de pedir a publicação" : undefined}>
-                <Button variant="secondary" onClick={openReview} disabled={saving || unsaved}>
-                  <GitPullRequest /> Pedir publicação
-                </Button>
-              </span>
-            )}
             <SaveButton
               dirty={dirty}
               unsaved={unsaved}
@@ -1067,7 +1058,11 @@ function SaveState({
   );
 }
 
-/** Salvar rápido (Ctrl+S) ou com uma descrição que aparece no histórico. */
+/**
+ * Salvar à esquerda, enviar à direita, igual em página publicada e em rascunho.
+ * Publicada: Salvar guarda neste navegador. Rascunho: Salvar grava no servidor (só a última versão, sem histórico).
+ * Em ambos o envio vai para a tela Alterações e só vale para o que já foi salvo.
+ */
 function SaveButton({
   dirty,
   unsaved,
@@ -1085,78 +1080,18 @@ function SaveButton({
   reviewOnly: boolean;
   onReview: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [note, setNote] = useState("");
-  const submit = async () => {
-    if (await onSave(note)) {
-      setNote("");
-      setOpen(false);
-    }
-  };
-  if (reviewOnly) {
-    // página publicada: salvar é local (para poder sair e voltar); publicar é só pela revisão
-    return (
-      <div className="flex items-center gap-2">
-        <Button variant="secondary" onClick={() => onSave()} disabled={!unsaved || saving}>
-          <Save /> Salvar
-          <kbd className="ml-0.5 hidden lg:inline-flex">{modKey} S</kbd>
-        </Button>
-        <span title={unsaved ? "Salve antes de enviar para revisão" : undefined}>
-          <Button onClick={onReview} disabled={!dirty || unsaved || saving}>
-            {saving ? <Loader2 className="animate-spin" /> : <GitPullRequest />} Enviar para revisão
-          </Button>
-        </span>
-      </div>
-    );
-  }
+  const sendLabel = reviewOnly ? "Enviar para revisão" : "Pedir publicação";
   return (
-    <div className="flex">
-      <Button onClick={() => onSave()} disabled={!dirty || saving} className="rounded-r-none pr-3">
-        {saving ? <Loader2 className="animate-spin" /> : <Save />} Salvar
-        <kbd className="ml-0.5 hidden border-background/25 bg-background/15 text-background/80 lg:inline-flex">{modKey} S</kbd>
+    <div className="flex items-center gap-2">
+      <Button variant="secondary" onClick={() => onSave()} disabled={!unsaved || saving}>
+        {saving && !reviewOnly ? <Loader2 className="animate-spin" /> : <Save />} Salvar
+        <kbd className="ml-0.5 hidden lg:inline-flex">{modKey} S</kbd>
       </Button>
-      <Popover open={open} onOpenChange={setOpen}>
-        <Hint label="Salvar com descrição">
-          <PopoverTrigger asChild>
-            <Button
-              disabled={!dirty || saving}
-              className="rounded-l-none border-l border-background/20 px-2"
-              aria-label="Salvar com descrição"
-            >
-              <ChevronDown />
-            </Button>
-          </PopoverTrigger>
-        </Hint>
-        <PopoverContent align="end" className="w-80">
-          <p className="text-sm font-bold">Salvar com descrição</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Aparece no histórico de versões, como uma mensagem de commit.
-          </p>
-          <textarea
-            autoFocus
-            value={note}
-            maxLength={200}
-            rows={3}
-            onChange={(e) => setNote(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            placeholder="Ex.: Atualiza o fluxo de autenticação com PKCE"
-            className="mt-3 w-full resize-none rounded-xl border bg-background/60 px-3 py-2 text-sm outline-none focus:border-brand/50 focus:ring-4 focus:ring-brand/10"
-          />
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-[11px] text-muted-foreground">
-              {note.length}/200 · {modKey}+Enter
-            </span>
-            <Button size="sm" onClick={submit} disabled={saving}>
-              {saving ? <Loader2 className="animate-spin" /> : <Save />} Salvar versão
-            </Button>
-          </div>
-        </PopoverContent>
-      </Popover>
+      <span title={unsaved ? `Salve antes de ${reviewOnly ? "enviar para revisão" : "pedir a publicação"}` : undefined}>
+        <Button onClick={onReview} disabled={(reviewOnly && !dirty) || unsaved || saving}>
+          <GitPullRequest /> {sendLabel}
+        </Button>
+      </span>
     </div>
   );
 }

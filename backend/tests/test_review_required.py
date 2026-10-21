@@ -69,14 +69,19 @@ def test_restoring_a_version_of_a_published_page_needs_review(admin):
     assert resp.status_code == 403 and "proposta de revisão" in resp.json()["detail"]
 
 
-def test_restoring_a_version_of_a_draft_still_works(admin):
-    draft = admin.post("/api/admin/pages", json={"title": "Rascunho com histórico"}).json()
+def test_saving_a_draft_leaves_no_history(admin):
+    draft = admin.post("/api/admin/pages", json={"title": "Rascunho sem histórico"}).json()
     v2 = admin.put(f"/api/admin/pages/{draft['id']}", json={"content": "# dois", "version": 1}).json()
     admin.put(f"/api/admin/pages/{draft['id']}", json={"content": "# três", "version": v2["version"]})
-    history = admin.get(f"/api/admin/pages/{draft['id']}/history").json()
-    old = next(h for h in history if h.get("version") == 1)
-    restored = admin.post(f"/api/admin/pages/{draft['id']}/history/{old['id']}/restore")
-    assert restored.status_code == 200
+    assert admin.get(f"/api/admin/pages/{draft['id']}/history").json() == []
+
+
+def test_a_draft_publication_archives_its_last_text(admin):
+    draft = admin.post("/api/admin/pages", json={"title": "Vai ao ar"}).json()
+    admin.put(f"/api/admin/pages/{draft['id']}", json={"content": "# rascunho", "version": 1})
+    apply_change(admin, draft["id"], fields={"published": True})
+    page = admin.get(f"/api/admin/pages/{draft['id']}").json()
+    assert page["semver"] == "1.0.0" and page["content"] == "# rascunho"
 
 
 def test_published_page_goes_back_to_draft_only_by_review(admin):

@@ -127,15 +127,16 @@ def test_unavailable_base_falls_back_to_confirmation(admin, monkeypatch):
 
 def test_content_at_version_handles_metadata_only_versions(admin):
     storage = admin.app.state.storage
-    created = admin.post("/api/admin/pages", json={"title": "Versões", "content": "v1\n"}).json()
-    v2 = admin.put(f"/api/admin/pages/{created['id']}", json={"description": "só metadados", "version": 1}).json()
-    v3 = admin.put(f"/api/admin/pages/{created['id']}", json={"content": "v3\n", "version": v2["version"]}).json()
-    assert (v2["version"], v3["version"]) == (2, 3)
-    assert storage.content_at_version(created["id"], 1) == "v1\n"
-    assert storage.content_at_version(created["id"], 2) == "v1\n"  # a v2 não mudou o texto
-    assert storage.content_at_version(created["id"], 3) == "v3\n"
-    assert storage.content_at_version(created["id"], 9) == "v3\n"
-    assert storage.content_at_version(created["id"], 0) is None
+    page = make_page(admin)  # publicada, texto BASE
+    v1 = page["version"]
+    v2 = apply_change(admin, page["id"], fields={"description": "só metadados"})["version"]
+    v3 = apply_change(admin, page["id"], content="v3\n")["version"]
+    assert v1 < v2 < v3
+    assert storage.content_at_version(page["id"], v1) == BASE
+    assert storage.content_at_version(page["id"], v2) == BASE  # a v2 não mudou o texto
+    assert storage.content_at_version(page["id"], v3) == "v3\n"
+    assert storage.content_at_version(page["id"], v3 + 6) == "v3\n"
+    assert storage.content_at_version(page["id"], 0) is None
 
 
 def test_page_found_by_tree_after_merge(admin):

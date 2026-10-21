@@ -175,7 +175,8 @@ class DocsService:
         """Salva alterações. Rascunhos mudam direto; páginas publicadas (e a publicação de um rascunho) só
         mudam por uma proposta de revisão aplicada (`via_review=True`), para qualquer papel.
         Cada gravação gera a próxima versão x.y.z conforme `bump` (padrão: patch), ou a `semver` informada,
-        que precisa ser maior que a atual."""
+        que precisa ser maior que a atual. Exceção: salvar um rascunho só sobrescreve o texto atual, sem nova versão
+        x.y.z nem entrada no histórico (a versão interna avança só para a checagem de conflito)."""
         current = self.storage.get_page(page_id)
         if not current:
             raise not_found()
@@ -210,7 +211,10 @@ class DocsService:
         note = (data.note or "").strip()
         publishing = bool(fields.get("published")) and not current.get("published", True)
         current_semver = current.get("semver") or legacy_semver(current.get("version", 1))
-        if semver is None:
+        draft_save = not via_review and not current.get("published", True)
+        if draft_save:
+            semver, note = current_semver, ""
+        elif semver is None:
             semver = bump_semver(current_semver, bump, publishing=publishing)
         elif not is_greater(semver, current_semver):
             raise HTTPException(
@@ -223,7 +227,9 @@ class DocsService:
         except VersionConflict:
             raise _conflict() from None
         if data.content is not None:
-            self.storage.put_content(page_id, data.content, author, version=expected + 1, semver=semver, note=note)
+            self.storage.put_content(
+                page_id, data.content, author, version=expected + 1, semver=semver, note=note, archive=not draft_save
+            )
         if before is not None:
             self._remember_moved(before)
         return self.get_page(page_id, include_drafts=True)
