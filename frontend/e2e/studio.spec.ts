@@ -30,6 +30,12 @@ test("admin cria um rascunho, pede publicação com descrição, aprova a própr
   await enviar.click();
   await expect(page.getByTestId("change-row").filter({ hasText: "Enviada para revisão" })).toHaveCount(1);
 
+  // já está em revisão: não volta para a lista de alterações, então não dá para enviar de novo
+  await page.goto("/admin/changes");
+  await expect(page.getByRole("heading", { name: "Alterações" })).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("checkbox", { name: new RegExp(`Selecionar ${title}`) })).toHaveCount(0);
+
   // ainda é rascunho: o leitor não vê
   await page.context().clearCookies();
   await page.goto(`/docs/glossario-${id}`);

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Hint } from "@/components/ui/tooltip";
-import { api, docsApi, keys, type Page, type TreeNode } from "@/lib/api";
+import { api, docsApi, keys, type Page, type Review, type TreeNode } from "@/lib/api";
 import { changedFields, rebaseLocal, reviewPayload, toDraft } from "@/lib/draft";
 import { clearLocal, readLocal, useLocalDrafts, type LocalDraft } from "@/lib/local-drafts";
 import { BUMP_OPTIONS, bumpSemver, type Bump } from "@/lib/semver";
@@ -214,6 +214,10 @@ export default function ChangesPage() {
     keepPreviousData: true,
   });
 
+  // rascunho que já tem proposta aberta não volta para a lista: ele segue em Revisões até ser aplicado
+  const { data: active } = useSWR<Review[]>(keys.reviews("active"));
+  const inReview = useMemo(() => new Set((active ?? []).map((r) => r.page_id)), [active]);
+
   const items: Item[] = useMemo(
     () =>
       (pages ?? []).map((page) => {
@@ -225,7 +229,7 @@ export default function ChangesPage() {
     [pages, drafts],
   );
   // páginas publicadas sem nada a enviar não entram (só as que tinham rascunho ou acabaram de ser enviadas)
-  const shown = items.filter((i) => i.kind === "publish" || i.local || done[i.id]);
+  const shown = items.filter((i) => done[i.id] || (i.kind === "publish" ? !inReview.has(i.id) : !!i.local));
   const q = query.trim().toLowerCase();
   const visible = q ? shown.filter((i) => `${i.page.title} ${i.page.path}`.toLowerCase().includes(q)) : shown;
   const edits = visible.filter((i) => i.kind === "edit");
