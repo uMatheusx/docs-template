@@ -657,23 +657,26 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-            <SaveButton
-              dirty={dirty}
-              unsaved={unsaved}
-              saving={saving}
-              onSave={save}
-              reviewOnly={reviewOnly}
-              onReview={openReview}
-            />
           </div>
         </div>
-        <input
-          value={draft.title}
-          onChange={(e) => set("title", e.target.value)}
-          className="mt-3 w-full bg-transparent font-display text-[1.7rem] font-semibold tracking-[-0.02em] outline-none placeholder:text-muted-foreground/60"
-          placeholder="Título da página"
-          aria-label="Título"
-        />
+        {/* o título ocupa a linha de baixo junto das ações principais: a de cima fica só com o contexto e as ferramentas */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <input
+            value={draft.title}
+            onChange={(e) => set("title", e.target.value)}
+            className="min-w-0 flex-1 basis-72 bg-transparent font-display text-[1.7rem] font-semibold tracking-[-0.02em] outline-none placeholder:text-muted-foreground/60"
+            placeholder="Título da página"
+            aria-label="Título"
+          />
+          <SaveButton
+            dirty={dirty}
+            unsaved={unsaved}
+            saving={saving}
+            onSave={save}
+            reviewOnly={reviewOnly}
+            onReview={openReview}
+          />
+        </div>
       </header>
 
       {(reviewOnly || (pageReviews?.length ?? 0) > 0) && (
