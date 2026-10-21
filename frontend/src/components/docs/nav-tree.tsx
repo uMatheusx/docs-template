@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 
 import { PageIcon } from "@/components/page-icon";
+import { StatusLetter } from "@/components/status-letter";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { TreeNode } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -108,9 +109,7 @@ function NavItem({
         />
       )}
       <span className="truncate">{node.title}</span>
-      {!node.published && (
-        <span title="Rascunho" aria-label="Rascunho" className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-      )}
+      {!node.published && <StatusLetter status="draft" />}
     </Link>
   );
 

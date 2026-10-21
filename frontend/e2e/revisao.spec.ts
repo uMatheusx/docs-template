@@ -287,3 +287,42 @@ test("o que está sendo editado é guardado sozinho: sair e voltar traz de volta
   await expect(page.getByText("Rascunho local restaurado")).toHaveCount(0);
   await expect(page.getByText("Texto digitado, sem apertar Salvar.")).toHaveCount(0);
 });
+
+test("letras de situação na árvore: P → M → S → E, com o nome por extenso ao passar o mouse", async ({ page }) => {
+  await loginAs(page, "admin");
+  const arquitetura = await findPage(page.request, "arquitetura");
+  await page.goto(`/admin/pages/${arquitetura.id}`);
+  const row = page.locator("li").filter({ hasText: /^Arquitetura/ }).first();
+
+  // publicada, sem mudanças: só o P
+  await expect(row.locator('[data-status="published"]')).toBeVisible();
+  await expect(row.locator('[data-status="modified"]')).toHaveCount(0);
+
+  // editou e ainda não salvou: aparece o M, e o hover diz o que significa
+  await appendToEditor(page, "\n\nTexto para a árvore.");
+  const modified = row.locator('[data-status="modified"]');
+  await expect(modified).toBeVisible();
+  await modified.hover();
+  await expect(page.getByRole("tooltip")).toContainText("Modificada: alterações ainda não salvas");
+
+  // salvou (neste navegador): M vira S
+  await page.getByRole("button", { name: /^Salvar/ }).click();
+  await expect(row.locator('[data-status="saved"]')).toBeVisible();
+  await expect(modified).toHaveCount(0);
+  await row.locator('[data-status="saved"]').hover();
+  await expect(page.getByRole("tooltip")).toContainText("Salva: salva neste navegador");
+
+  // enviou para revisão: some o S e aparece o E
+  await page.getByRole("button", { name: "Enviar para revisão" }).click();
+  await page.getByLabel(/O que mudou e por quê/).fill("Teste das letras de situação.");
+  await page.getByRole("button", { name: "Enviar proposta" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(row.locator('[data-status="review"]')).toBeVisible();
+  await expect(row.locator('[data-status="saved"]')).toHaveCount(0);
+  await row.locator('[data-status="review"]').hover();
+  await expect(page.getByRole("tooltip")).toContainText("Em revisão: há uma proposta");
+
+  // limpa: fecha a proposta para não interferir nos outros testes
+  const reviews = await (await page.request.get(`/api/admin/reviews?state=active&page_id=${arquitetura.id}`)).json();
+  for (const r of reviews) await page.request.post(`/api/admin/reviews/${r.id}/close`);
+});

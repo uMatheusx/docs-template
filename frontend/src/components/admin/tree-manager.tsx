@@ -11,9 +11,10 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { toast } from "sonner";
-import { useSWRConfig } from "swr";
+import useSWR, { useSWRConfig } from "swr";
 
 import { PageIcon } from "@/components/page-icon";
+import { PageStatusLetters } from "@/components/status-letter";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +24,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Hint } from "@/components/ui/tooltip";
 import { useSession } from "@/hooks/use-session";
-import { docsApi, keys, type TreeNode } from "@/lib/api";
+import { docsApi, keys, type Review, type TreeNode } from "@/lib/api";
+import { useLocalDrafts } from "@/lib/local-drafts";
 import { findNode, isDescendant, siblingsOf } from "@/lib/tree";
 import { bodyFont } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -68,6 +70,10 @@ export function TreeManager({ tree, selectedId, onSelect, onAddChild, onMove, on
   const canManage = user?.role === "admin";
   const dragDisabled = filtered || !canManage;
   const { mutate } = useSWRConfig();
+  // letras de situação: rascunhos locais deste navegador (M/S) e páginas com proposta aberta (E)
+  const localDrafts = useLocalDrafts();
+  const { data: activeReviews } = useSWR<Review[]>(keys.reviews("active"));
+  const inReview = new Set((activeReviews ?? []).map((r) => r.page_id));
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [dragId, setDragId] = useState<string | null>(null);
   const [drop, setDrop] = useState<{ id: string; position: Position } | null>(null);
@@ -207,13 +213,10 @@ export function TreeManager({ tree, selectedId, onSelect, onAddChild, onMove, on
           {!isOpen && node.children.length > 0 && (
             <span className="rounded-full bg-muted px-1.5 text-[10px] font-bold text-muted-foreground">{node.children.length}</span>
           )}
-          <span
-            title={node.published ? "Publicada" : "Rascunho"}
-            aria-label={node.published ? "Publicada" : "Rascunho"}
-            className={cn(
-              "h-1.5 w-1.5 shrink-0 rounded-full group-focus-within:hidden group-hover:hidden",
-              node.published ? "bg-emerald-500" : "bg-amber-500",
-            )}
+          <PageStatusLetters
+            published={node.published}
+            local={localDrafts[node.id]}
+            inReview={inReview.has(node.id)}
           />
           {/* largura 0 (não `hidden`): as ações continuam alcançáveis pelo teclado e aparecem ao focar */}
           <span className="flex w-0 items-center overflow-hidden group-focus-within:w-auto group-hover:w-auto has-[[data-state=open]]:w-auto">

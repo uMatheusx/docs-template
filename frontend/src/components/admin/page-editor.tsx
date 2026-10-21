@@ -1044,15 +1044,16 @@ function SaveState({
           "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold",
           state === "saved" && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
           state === "dirty" && "bg-brand/10 text-brand-ink",
-          (state === "proposal" || state === "local") && "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+          state === "local" && "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+          state === "proposal" && "bg-violet-500/10 text-violet-700 dark:text-violet-300",
           state === "saving" && "bg-muted text-muted-foreground",
         )}
       >
         {state === "saving" && <Loader2 className="h-3 w-3 animate-spin" />}
-        {state === "dirty" && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />}
+        {state === "dirty" && <span aria-hidden className="font-mono text-[11px] font-bold leading-none">M</span>}
         {state === "saved" && <Check className="h-3 w-3" />}
-        {state === "proposal" && <GitPullRequest className="h-3 w-3" />}
-        {state === "local" && <Save className="h-3 w-3" />}
+        {state === "proposal" && <span aria-hidden className="font-mono text-[11px] font-bold leading-none">E</span>}
+        {state === "local" && <span aria-hidden className="font-mono text-[11px] font-bold leading-none">S</span>}
         {state === "saving"
           ? "Salvando…"
           : state === "dirty"
