@@ -6,6 +6,7 @@ import {
   Home,
   Link2,
   PenLine,
+  Printer,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef } from "react";
@@ -32,7 +33,7 @@ import { useDocsContext } from "@/pages/docs/docs-layout";
 export default function DocPage() {
   const path = useParams()["*"] ?? "";
   const navigate = useNavigate();
-  const { tree, focus } = useDocsContext();
+  const { tree } = useDocsContext();
   const { user } = useSession();
   const { href } = useDocsBase();
   const editable = !!user;
@@ -101,7 +102,7 @@ export default function DocPage() {
     <>
       <ReadingProgress />
       <div className="flex gap-10 xl:gap-14">
-        <article ref={articleRef} className={cn("mx-auto min-w-0 flex-1 px-1 pb-6 pt-8 sm:px-4", focus ? "max-w-[760px]" : "max-w-[760px]")}>
+        <article ref={articleRef} className={cn("mx-auto min-w-0 max-w-[760px] flex-1 px-1 pb-6 pt-8 sm:px-4 print:max-w-none print:p-0")}>
           <motion.header
             key={page.id}
             initial={{ opacity: 0 }}
@@ -137,7 +138,12 @@ export default function DocPage() {
               <span title={formatDate(page.updated_at)}>Atualizado {timeAgo(page.updated_at)}</span>
               {page.updated_by && <span>por {page.updated_by}</span>}
               {!page.published && <Badge variant="warning">Rascunho</Badge>}
-              <span className="ml-auto flex items-center gap-1">
+              <span className="ml-auto flex items-center gap-1 print:hidden">
+                <Hint label="Imprimir ou salvar PDF">
+                  <Button variant="ghost" size="icon-sm" onClick={() => window.print()} aria-label="Imprimir ou salvar PDF" className="h-8 w-8 rounded-full">
+                    <Printer />
+                  </Button>
+                </Hint>
                 <Hint label="Copiar link">
                   <Button variant="ghost" size="icon-sm" onClick={copyLink} aria-label="Copiar link" className="h-8 w-8 rounded-full">
                     <Link2 />
@@ -178,7 +184,7 @@ export default function DocPage() {
           </motion.div>
 
           <footer className="mt-20 border-t border-border/70 pt-8">
-            <div className="grid gap-6 sm:grid-cols-2">
+            <div className="grid gap-6 sm:grid-cols-2 print:hidden">
               {prev ? (
                 <Link to={href(prev.path)} className="group rounded-lg">
                   <span className="block text-[13px] text-muted-foreground">Anterior</span>
@@ -208,7 +214,7 @@ export default function DocPage() {
           Altura = conteúdo (self-start): uma coluna sticky da altura da tela era empurrada para
           cima no fim do artigo e encostava/sumia sob o header. top-24 deixa ~28px abaixo do header.
         */}
-        <aside className="sticky top-[84px] mt-8 hidden max-h-[calc(100vh-7rem)] w-56 shrink-0 flex-col gap-6 self-start overflow-y-auto pb-2 xl:flex">
+        <aside className="sticky top-[84px] mt-8 hidden max-h-[calc(100vh-7rem)] w-56 shrink-0 flex-col gap-6 self-start overflow-y-auto pb-2 xl:flex print:!hidden">
           <Toc containerRef={articleRef} contentKey={page.id + page.version} />
           <div className="space-y-0.5 border-t border-border/70 pt-4 text-[13px] first:border-t-0 first:pt-0">
             {editable && (
@@ -218,6 +224,9 @@ export default function DocPage() {
             )}
             <button onClick={copyLink} className="flex w-full items-center gap-2 rounded-md py-1.5 text-muted-foreground transition-colors hover:text-foreground">
               <Link2 className="h-3.5 w-3.5" /> Copiar link
+            </button>
+            <button onClick={() => window.print()} className="flex w-full items-center gap-2 rounded-md py-1.5 text-muted-foreground transition-colors hover:text-foreground">
+              <Printer className="h-3.5 w-3.5" /> Imprimir ou salvar PDF
             </button>
             <button
               onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
