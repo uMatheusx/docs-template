@@ -54,8 +54,12 @@ interface VersionHistoryProps {
   onOpenChange: (open: boolean) => void;
   /** versão salva (baseline do editor) */
   page: Page;
-  /** há alterações não salvas no editor */
-  dirty: boolean;
+  /**
+   * O que há no editor além da versão publicada, e onde está guardado:
+   * unsaved = não salvo em lugar nenhum; unsent = salvo neste navegador, ainda não enviado para revisão;
+   * proposal = o texto de uma proposta carregada, ainda não aplicada na página.
+   */
+  pending: { kind: "unsaved" | "unsent" | "proposal"; number?: number } | null;
   /** versão selecionada ao abrir (`current` ou id do histórico) */
   initialId?: string;
   onRestored: (page: Page) => Promise<void> | void;
@@ -103,7 +107,21 @@ const versionLabel = (item: Item) =>
 /** rótulo curto para o selo da linha do tempo */
 const versionBadge = (item: Item) => (item.version ? `v${item.version}` : "antiga");
 
-function HistoryBody({ page, dirty, initialId, onRestored, reviewOnly, onUseVersion, onClose }: Omit<VersionHistoryProps, "open" | "onOpenChange"> & { onClose: () => void }) {
+function pendingNotice(pending: NonNullable<VersionHistoryProps["pending"]>) {
+  if (pending.kind === "unsaved") return "Você tem alterações não salvas no editor. Elas não aparecem aqui até serem salvas e aplicadas.";
+  if (pending.kind === "unsent") {
+    return "Você tem alterações salvas que ainda não foram enviadas para revisão. Elas só aparecem aqui depois de enviadas e aplicadas.";
+  }
+  return `O editor mostra a proposta #${pending.number}, que ainda não foi aplicada na página. Ela só aparece aqui depois de aplicada.`;
+}
+
+function pendingReplaced(pending: NonNullable<VersionHistoryProps["pending"]>) {
+  if (pending.kind === "unsaved") return " As alterações não salvas no editor serão perdidas.";
+  if (pending.kind === "unsent") return " As alterações salvas neste navegador que não foram enviadas para revisão serão perdidas.";
+  return ` O que está no editor (proposta #${pending.number}) será substituído.`;
+}
+
+function HistoryBody({ page, pending, initialId, onRestored, reviewOnly, onUseVersion, onClose }: Omit<VersionHistoryProps, "open" | "onOpenChange"> & { onClose: () => void }) {
   const { data: entries, isLoading, mutate } = useSWR<HistoryEntry[]>(keys.history(page.id));
   const [selectedId, setSelectedId] = useState(initialId ?? CURRENT);
   const [mode, setMode] = useState<"changes" | "preview">("changes");
@@ -146,6 +164,13 @@ function HistoryBody({ page, dirty, initialId, onRestored, reviewOnly, onUseVers
     const ops = diffLines(previous ? prior.content! : "", target.content);
     return { hunks: collapseDiff(ops), stats: diffStats(ops), first: !previous };
   }, [target.content, prior.content, previous, effectiveAgainst, page.content]);
+
+  function applyVersion() {
+    if (target.content === undefined) return;
+    onUseVersion?.(target.content, versionLabel(selected));
+    setConfirming(false);
+    onClose();
+  }
 
   async function restore() {
     setRestoring(true);
@@ -199,10 +224,10 @@ function HistoryBody({ page, dirty, initialId, onRestored, reviewOnly, onUseVers
       <div className="grid min-h-0 flex-1 md:grid-cols-[320px_1fr]">
         {/* ------------------------------------------------ linha do tempo */}
         <aside className="hidden min-h-0 overflow-y-auto border-r bg-sidebar md:block" onKeyDown={onListKey}>
-          {dirty && (
+          {pending && (
             <div className="m-3 flex gap-2 rounded-xl border border-brand/30 bg-brand-soft p-3 text-xs text-brand-ink">
               <TriangleAlert className="h-4 w-4 shrink-0" />
-              Você tem alterações não salvas no editor. Elas não aparecem aqui até serem salvas.
+              {pendingNotice(pending)}
             </div>
           )}
           {groups.map((group) => (
@@ -398,12 +423,8 @@ function HistoryBody({ page, dirty, initialId, onRestored, reviewOnly, onUseVers
               <Button
                 size="sm"
                 onClick={() => {
-                  if (reviewOnly && target.content !== undefined) {
-                    onUseVersion?.(target.content, versionLabel(selected));
-                    onClose();
-                  } else {
-                    setConfirming(true);
-                  }
+                  if (reviewOnly && target.content !== undefined && !pending) applyVersion();
+                  else setConfirming(true);
                 }}
                 disabled={target.content === undefined}
               >
@@ -417,10 +438,14 @@ function HistoryBody({ page, dirty, initialId, onRestored, reviewOnly, onUseVers
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Restaurar a versão {versionLabel(selected)}?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {reviewOnly ? `Usar a versão ${versionLabel(selected)} no editor?` : `Restaurar a versão ${versionLabel(selected)}?`}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              O conteúdo dela vira uma nova versão (v{page.version + 1}). A versão atual continua no histórico.
-              {dirty && " As alterações não salvas no editor serão substituídas."}
+              {reviewOnly
+                ? "O texto do editor passa a ser o dessa versão. A página publicada só muda quando você enviar para revisão e a proposta for aplicada."
+                : `O conteúdo dela vira uma nova versão (v${page.version + 1}). A versão atual continua no histórico.`}
+              {pending && pendingReplaced(pending)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -428,11 +453,12 @@ function HistoryBody({ page, dirty, initialId, onRestored, reviewOnly, onUseVers
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
-                restore();
+                if (reviewOnly) applyVersion();
+                else restore();
               }}
               disabled={restoring}
             >
-              {restoring ? <Loader2 className="animate-spin" /> : <RotateCcw />} Restaurar
+              {restoring ? <Loader2 className="animate-spin" /> : <RotateCcw />} {reviewOnly ? "Substituir e usar" : "Restaurar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

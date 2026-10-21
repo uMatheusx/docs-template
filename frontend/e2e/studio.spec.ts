@@ -77,6 +77,7 @@ test("editora propõe uma mudança, o admin aprova e aplica", async ({ page }) =
   const faq = await findPage(page.request, "faq");
   await page.goto(`/admin/pages/${faq.id}`);
   await appendToEditor(page, `\n\n${marker}`);
+  await page.getByRole("button", { name: /^Salvar/ }).click(); // só se envia o que foi salvo
   await page.getByRole("button", { name: "Enviar para revisão" }).click();
   await page.getByLabel("Resumo").fill("Acrescenta uma linha ao FAQ");
   await page.getByLabel(/O que mudou e por quê/).fill("Teste de ponta a ponta do fluxo de revisão.");
@@ -110,6 +111,7 @@ Texto.` } })).json();
 
   await page.goto(`/admin/pages/${created.id}`);
   await page.getByRole("switch").first().click(); // Publicada -> Rascunho
+  await page.getByRole("button", { name: /^Salvar/ }).click(); // só se envia o que foi salvo
   await page.getByRole("button", { name: "Enviar para revisão" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("Altera publicação")).toBeVisible();
@@ -134,6 +136,7 @@ test("proposta carregada no editor não conta como alteração não salva", asyn
   const arquitetura = await findPage(page.request, "arquitetura");
   await page.goto(`/admin/pages/${arquitetura.id}`);
   await appendToEditor(page, "\n\nTexto guardado na proposta.");
+  await page.getByRole("button", { name: /^Salvar/ }).click(); // só se envia o que foi salvo
   await page.getByRole("button", { name: "Enviar para revisão" }).click();
   await page.getByLabel(/O que mudou e por quê/).fill("Proposta para testar o carregamento.");
   await page.getByRole("button", { name: "Enviar proposta" }).click();

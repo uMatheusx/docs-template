@@ -339,7 +339,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     }
     setPersisted({ kind: "local", snapshot: draft });
     toast.success("Salvo neste navegador", {
-      description: "Pode trocar de página e voltar: as alterações ficam aqui. Nada foi enviado para revisão.",
+      description: "Pode trocar de página e voltar: as alterações ficam aqui. Quando estiver pronto, envie para revisão.",
     });
     return true;
   }
@@ -379,7 +379,22 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     }
   }
 
+  /** Só se envia para revisão o que já foi salvo: abre o formulário ou avisa para salvar antes. */
+  function openReview() {
+    if (unsaved) {
+      toast.error("Salve antes de enviar para revisão", {
+        description: "Use Salvar para guardar as alterações e depois envie.",
+      });
+      return;
+    }
+    setReviewOpen(true);
+  }
+
   async function submitReview({ title, description, requestPublish }: ReviewDraft) {
+    if (unsaved) {
+      toast.error("Salve antes de enviar para revisão");
+      return false;
+    }
     const fields: ReviewFields = {};
     for (const field of changed) if (field !== "content") Object.assign(fields, { [field]: draft[field] });
     if (requestPublish) fields.published = true;
@@ -643,8 +658,8 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 <DropdownMenuItem onSelect={() => openHistory()}>
                   <History /> Histórico de versões
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setReviewOpen(true)}>
-                  <GitPullRequest /> Enviar para revisão…
+                <DropdownMenuItem disabled={unsaved} onSelect={openReview}>
+                  <GitPullRequest /> Enviar para revisão…{unsaved && <span className="ml-auto text-xs">salve antes</span>}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {isAdmin && (
@@ -680,9 +695,11 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
               </DropdownMenuContent>
             </DropdownMenu>
             {!baseline.published && (
-              <Button variant="secondary" onClick={() => setReviewOpen(true)} disabled={saving}>
-                <GitPullRequest /> Pedir publicação
-              </Button>
+              <span title={unsaved ? "Salve antes de pedir a publicação" : undefined}>
+                <Button variant="secondary" onClick={openReview} disabled={saving || unsaved}>
+                  <GitPullRequest /> Pedir publicação
+                </Button>
+              </span>
             )}
             <SaveButton
               dirty={dirty}
@@ -690,7 +707,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
               saving={saving}
               onSave={save}
               reviewOnly={reviewOnly}
-              onReview={() => setReviewOpen(true)}
+              onReview={openReview}
             />
           </div>
         </div>
@@ -914,7 +931,15 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         open={history.open}
         onOpenChange={(open) => setHistory((h) => ({ ...h, open }))}
         page={baseline}
-        dirty={dirty}
+        pending={
+          unsaved
+            ? { kind: "unsaved" }
+            : persisted?.kind === "local" && dirty
+              ? { kind: "unsent" }
+              : persisted?.kind === "proposal" && dirty
+                ? { kind: "proposal", number: persisted.number }
+                : null
+        }
         initialId={history.id}
         reviewOnly={reviewOnly}
         onUseVersion={(content, label) => {
@@ -1077,9 +1102,11 @@ function SaveButton({
           <Save /> Salvar
           <kbd className="ml-0.5 hidden lg:inline-flex">{modKey} S</kbd>
         </Button>
-        <Button onClick={onReview} disabled={!dirty || saving}>
-          {saving ? <Loader2 className="animate-spin" /> : <GitPullRequest />} Enviar para revisão
-        </Button>
+        <span title={unsaved ? "Salve antes de enviar para revisão" : undefined}>
+          <Button onClick={onReview} disabled={!dirty || unsaved || saving}>
+            {saving ? <Loader2 className="animate-spin" /> : <GitPullRequest />} Enviar para revisão
+          </Button>
+        </span>
       </div>
     );
   }
@@ -1129,12 +1156,6 @@ function SaveButton({
               {saving ? <Loader2 className="animate-spin" /> : <Save />} Salvar versão
             </Button>
           </div>
-          <button
-            onClick={() => (setOpen(false), onReview())}
-            className="mt-3 flex w-full items-center gap-2 border-t pt-3 text-left text-xs font-semibold text-muted-foreground hover:text-foreground"
-          >
-            <GitPullRequest className="h-3.5 w-3.5 text-brand" /> Enviar para revisão pedindo a publicação
-          </button>
         </PopoverContent>
       </Popover>
     </div>

@@ -11,8 +11,22 @@ test("Salvar guarda neste navegador: dá para trocar de página e voltar, e só 
 
   // em página publicada o Salvar é local e não publica nada
   await appendToEditor(page, "\n\nTexto salvo só neste navegador.");
+
+  // antes de salvar não dá para enviar, e o histórico fala em alterações não salvas
+  await expect(page.getByRole("button", { name: "Enviar para revisão" })).toBeDisabled();
+  await page.getByRole("button", { name: "Histórico de versões" }).click();
+  await expect(page.getByText(/Você tem alterações não salvas no editor/)).toBeVisible();
+  await page.keyboard.press("Escape");
+
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText("Salvo neste navegador · não enviado")).toBeVisible();
+
+  // salvo: agora dá para enviar, e o histórico diz que falta só enviar para revisão
+  await expect(page.getByRole("button", { name: "Enviar para revisão" })).toBeEnabled();
+  await page.getByRole("button", { name: "Histórico de versões" }).click();
+  await expect(page.getByText(/alterações salvas que ainda não foram enviadas para revisão/)).toBeVisible();
+  await expect(page.getByText(/Você tem alterações não salvas/)).toHaveCount(0);
+  await page.keyboard.press("Escape");
 
   // sair não pede confirmação: está guardado
   await page.getByRole("link", { name: "Visão geral" }).click();
@@ -101,4 +115,38 @@ test("proposta defasada: trechos livres se combinam e o revisor resolve o confli
   await expect(body).toContainText("Passo dois, da proposta.");
   await expect(body).toContainText("Conclusão da proposta.");
   await reader.close();
+});
+
+test("usar uma versão antiga no editor pede confirmação quando há algo pendente", async ({ page }) => {
+  const title = `Versões ${unique()}`;
+  await loginAs(page, "admin");
+  const created = await (await page.request.post("/api/admin/pages", { data: { title, content: "# Versões\n\nTexto original.\n" } })).json();
+  await changeViaReview(page.request, created.id, { fields: { published: true } });
+  await changeViaReview(page.request, created.id, { content: "# Versões\n\nTexto novo.\n" });
+
+  await page.goto(`/admin/pages/${created.id}`);
+  const openOldVersion = async () => {
+    await page.getByRole("button", { name: "Histórico de versões" }).click();
+    await page.locator('[id^="version-"]').nth(1).click(); // a mais antiga
+    await page.getByRole("button", { name: /Usar v\d+ no editor/ }).click();
+  };
+
+  // editor limpo: usa direto, sem perguntar
+  await openOldVersion();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.getByText("Texto original.").first()).toBeVisible();
+
+  // agora há uma alteração não salva (o texto antigo): usar de novo pergunta
+  await openOldVersion();
+  const confirm = page.getByRole("alertdialog");
+  await expect(confirm.getByText(/Usar a versão v\d+ no editor\?/)).toBeVisible();
+  await expect(confirm.getByText(/alterações não salvas no editor serão perdidas/)).toBeVisible();
+  await confirm.getByRole("button", { name: "Cancelar" }).click();
+  await expect(confirm).toBeHidden();
+
+  // o histórico continua aberto: confirmar aplica a versão e fecha tudo
+  await page.getByRole("button", { name: /Usar v\d+ no editor/ }).click();
+  await confirm.getByRole("button", { name: "Substituir e usar" }).click();
+  await expect(confirm).toBeHidden();
+  await expect(page.getByText("Texto original.").first()).toBeVisible();
 });
