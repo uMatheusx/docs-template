@@ -410,6 +410,30 @@ class Storage:
             )
         return entries
 
+    def content_at_version(self, page_id: str, version: int) -> str | None:
+        """Texto da página na versão `version` (ou o mais recente anterior, se a versão só mudou metadados).
+
+        O texto atual e cada versão arquivada guardam o número da versão em que foram escritos. Devolve None
+        se nenhum deles puder ser localizado (histórico antigo demais ou sem número de versão).
+        """
+        candidates: list[tuple[int, str | None]] = []  # (versão do texto, id no histórico; None = texto atual)
+        try:
+            head = self.s3.head_object(Bucket=self.bucket, Key=self.content_key(page_id))
+            current = head["Metadata"].get("version", "")
+            if current.isdigit():
+                candidates.append((int(current), None))
+        except ClientError as exc:
+            if _error_code(exc) not in ("404", "NoSuchKey", "NotFound"):
+                raise
+        for entry in self.list_history(page_id, limit=500):
+            if entry.get("version") is not None:
+                candidates.append((entry["version"], entry["id"]))
+        eligible = [c for c in candidates if c[0] <= version]
+        if not eligible:
+            return None
+        _, version_id = max(eligible, key=lambda c: c[0])
+        return self.get_content(page_id) if version_id is None else self.get_history(page_id, version_id)
+
     def get_history(self, page_id: str, version_id: str) -> str | None:
         if not re.fullmatch(r"[0-9TZ]+", version_id):
             return None

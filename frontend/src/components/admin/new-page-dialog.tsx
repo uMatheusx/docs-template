@@ -53,13 +53,13 @@ function TemplateCard({ template, onPick, onDelete }: { template: PageTemplate; 
       <button
         type="button"
         onClick={onPick}
-        className="flex h-full w-full flex-col items-start gap-2 rounded-2xl border bg-card p-4 text-left transition-all hover:-translate-y-0.5 hover:border-brand/50 hover:shadow-glow focus-visible:border-brand"
+        className="flex h-full w-full flex-col items-start gap-2 rounded-2xl border bg-card p-4 text-left transition-colors hover:border-foreground/30 hover:bg-muted/50 focus-visible:border-brand"
       >
         <span className="flex w-full items-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl border bg-background transition-colors group-hover:brand-tile group-hover:border-transparent">
             <PageIcon name={template.icon} className="h-4 w-4" />
           </span>
-          {tag && <span className="ml-auto rounded-full bg-navy-800/10 px-2 py-0.5 text-[10px] font-bold text-foreground dark:bg-white/10">{tag}</span>}
+          {tag && <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{tag}</span>}
         </span>
         <span className="font-display text-[15px] font-bold leading-tight">{template.name}</span>
         <span className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{template.description || "Modelo do time"}</span>
@@ -99,7 +99,7 @@ function TemplateGallery({ onPick }: { onPick: (t: PageTemplate) => void }) {
         <DialogTitle>Nova página</DialogTitle>
         <DialogDescription>Escolha um ponto de partida. Você ajusta título, local e conteúdo em seguida.</DialogDescription>
       </DialogHeader>
-      <div className="-mx-1 max-h-[62vh] space-y-5 overflow-y-auto px-1 pb-1">
+      <div className="-mx-2 max-h-[62vh] space-y-5 overflow-y-auto p-2">
         <div className="grid gap-3 sm:grid-cols-3">
           {BUILTIN_TEMPLATES.map((t) => (
             <TemplateCard key={t.id} template={t} onPick={() => onPick(t)} />

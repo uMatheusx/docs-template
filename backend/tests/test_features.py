@@ -139,11 +139,12 @@ def test_review_rules_conflict_and_self_approval(admin):
     # o autor pode aprovar a própria proposta (REVIEW_SELF_APPROVAL é verdadeiro por padrão)
     assert admin.post(f"/api/admin/reviews/{own['id']}/approve", json={}).status_code == 200
 
-    # outro admin muda a página depois da proposta: aplicar exige confirmação (force)
+    # outro admin muda o texto depois da proposta; ela só mexe em campos, então se aplica sem conflito
     login(admin, "rui")
     apply_change(admin, faq["id"], content="# FAQ v+1")
-    assert admin.post(f"/api/admin/reviews/{own['id']}/merge", json={}).status_code == 409
-    merged = admin.post(f"/api/admin/reviews/{own['id']}/merge", json={"force": True}).json()
+    merged = admin.post(f"/api/admin/reviews/{own['id']}/merge", json={})
+    assert merged.status_code == 200
+    merged = merged.json()
     assert merged["status"] == "merged"
     page = admin.get(f"/api/admin/pages/{faq['id']}").json()
     assert page["description"] == "Nova descrição" and page["content"] == "# FAQ v+1"

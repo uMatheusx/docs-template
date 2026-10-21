@@ -11,6 +11,7 @@ import uuid
 from fastapi import HTTPException, status
 
 from .config import Settings
+from .merge3 import MergeResult, merge3
 from .schemas import PageUpdate, ReviewInput, User
 from .service import DocsService, not_found
 from .storage import utcnow
@@ -63,6 +64,40 @@ class ReviewService:
         self.storage.put_review(review)
         return review
 
+    def _merge_with_page(self, review: dict, page: dict) -> MergeResult | None:
+        """Mescla a proposta com o texto atual. None se não há o que mesclar ou a versão-base não foi encontrada."""
+        if not review.get("has_content") or page.get("version") == review["base_version"]:
+            return None
+        proposed = self.storage.get_text(self._proposal_key(review))
+        base = self.storage.content_at_version(review["page_id"], review["base_version"])
+        if proposed is None or base is None:
+            return None
+        return merge3(base, self.storage.get_content(review["page_id"]), proposed)
+
+    def _merge_info(self, review: dict, page: dict | None) -> dict | None:
+        if not page or review["status"] not in ACTIVE or not review.get("has_content"):
+            return None
+        info = {"base_version": review["base_version"], "current_version": page.get("version", 0)}
+        if page.get("version") == review["base_version"]:
+            return {**info, "state": "current"}
+        result = self._merge_with_page(review, page)
+        if result is None:
+            return {**info, "state": "unavailable"}
+        if result.clean:
+            return {**info, "state": "clean", "merged_content": result.render()}
+        conflicts = [
+            {
+                "index": i,
+                "before": "".join(c.before),
+                "base": "".join(c.base),
+                "ours": "".join(c.ours),
+                "theirs": "".join(c.theirs),
+                "after": "".join(c.after),
+            }
+            for i, c in enumerate(result.conflicts)
+        ]
+        return {**info, "state": "conflicts", "conflicts": conflicts}
+
     # ------------------------------------------------------------------ leitura
     def list(self, state: str = "active", page_id: str | None = None) -> list[dict]:
         reviews = self.storage.list_reviews(page_id)
@@ -86,6 +121,7 @@ class ReviewService:
             "current_content": current,
             "current_version": (page or {}).get("version", 0),
             "page_kind": (page or {}).get("kind", "doc"),
+            "merge": self._merge_info(review, page),
         }
 
     # ------------------------------------------------------------------ escrita
@@ -162,7 +198,9 @@ class ReviewService:
         review["status"] = "changes_requested"
         return self._decorate(self._save(review, _event("changes_requested", user.username, body.strip())))
 
-    def merge(self, review_id: str, user: User, force: bool = False) -> dict:
+    def merge(
+        self, review_id: str, user: User, force: bool = False, resolutions: list[str] | None = None
+    ) -> dict:
         review = self._get(review_id)
         if user.role != "admin":
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Apenas administradores aplicam propostas.")
@@ -171,13 +209,35 @@ class ReviewService:
         page = self.storage.get_page(review["page_id"])
         if not page:
             raise not_found()
-        if page.get("version") != review["base_version"] and not force:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                f"A página mudou desde a proposta (v{review['base_version']} → v{page.get('version')}). "
-                "Peça ao autor para atualizar ou aplique mesmo assim.",
-            )
         content = self.storage.get_text(self._proposal_key(review)) if review.get("has_content") else None
+        how = ""
+        stale = page.get("version") != review["base_version"]
+        if stale and content is not None and not force:
+            # a página mudou depois da proposta: combina as duas mudanças em vez de sobrescrever
+            result = self._merge_with_page(review, page)
+            if result is None:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    f"A página mudou desde a proposta (v{review['base_version']} → v{page.get('version')}) e não foi "
+                    "possível combinar as mudanças. Peça ao autor para atualizar ou aplique mesmo assim.",
+                )
+            if result.clean:
+                content = result.render()
+                how = f" Combinada automaticamente com as mudanças feitas na página desde a v{review['base_version']}."
+            else:
+                total = len(result.conflicts)
+                if resolutions is None:
+                    raise HTTPException(
+                        status.HTTP_409_CONFLICT,
+                        f"A página e a proposta mudaram os mesmos trechos ({total}): escolha uma opção para cada um.",
+                    )
+                if len(resolutions) != total:
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST, f"Escolha uma opção para cada um dos {total} conflitos."
+                    )
+                content = result.render(resolutions)  # type: ignore[arg-type]
+                how = f" Conflitos resolvidos por {user.username} ({total})" + '.'
+
         self.storage.put_text(self._base_key(review), self.storage.get_content(review["page_id"]))
         update = PageUpdate(
             **review.get("fields", {}),
@@ -188,7 +248,7 @@ class ReviewService:
         saved = self.docs.update_page(review["page_id"], update, review["author"], via_review=True)
         review["status"] = "merged"
         review["merged_version"] = saved["version"]
-        self._save(review, _event("merged", user.username, f"Aplicada como v{saved['version']}."))
+        self._save(review, _event("merged", user.username, f"Aplicada como v{saved['version']}.{how}"))
         return self._decorate(review)
 
     def close(self, review_id: str, user: User) -> dict:

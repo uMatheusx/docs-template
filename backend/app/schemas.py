@@ -213,11 +213,39 @@ class Review(BaseModel):
     events: list[ReviewEvent] = []
 
 
+class MergeConflict(BaseModel):
+    """Trecho que a página e a proposta mudaram de formas diferentes desde a versão-base."""
+
+    index: int
+    before: str = ""
+    base: str
+    ours: str
+    theirs: str
+    after: str = ""
+
+
+class MergeInfo(BaseModel):
+    """Situação da proposta frente à versão atual da página.
+
+    - current: a página não mudou desde a proposta
+    - clean: mudou, mas as alterações se combinam sozinhas (merged_content é o resultado)
+    - conflicts: os dois lados mexeram nos mesmos trechos; quem revisa escolhe um por um
+    - unavailable: não foi possível recuperar a versão-base para mesclar
+    """
+
+    state: Literal["current", "clean", "conflicts", "unavailable"]
+    base_version: int
+    current_version: int
+    conflicts: list[MergeConflict] = []
+    merged_content: str | None = None
+
+
 class ReviewDetail(Review):
     proposed_content: str
     current_content: str
     current_version: int
     page_kind: PageKind = "doc"
+    merge: MergeInfo | None = None
 
 
 class ReviewComment(BaseModel):
@@ -229,7 +257,10 @@ class ReviewDecision(BaseModel):
 
 
 class ReviewMerge(BaseModel):
+    # força a proposta inteira por cima da página, sem mesclar
     force: bool = False
+    # uma escolha por conflito, na ordem em que aparecem em ReviewDetail.merge.conflicts
+    resolutions: list[Literal["ours", "theirs", "both"]] | None = None
 
 
 # ---------------------------------------------------------------- modelos de página

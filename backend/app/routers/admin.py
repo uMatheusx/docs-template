@@ -173,7 +173,7 @@ def merge_review(
     user: User = Depends(require_editor),
     reviews: ReviewService = Depends(get_reviews),
 ):
-    return reviews.merge(review_id, user, body.force)
+    return reviews.merge(review_id, user, body.force, body.resolutions)
 
 
 @router.post("/reviews/{review_id}/close", response_model=Review)
