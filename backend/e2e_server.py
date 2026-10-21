@@ -26,8 +26,8 @@ os.environ.update(
     JWT_SECRET="e2e-segredo-somente-para-testes-automatizados",
 )
 
-import uvicorn  # noqa: E402
-from moto import mock_aws  # noqa: E402
+import uvicorn
+from moto import mock_aws
 
 if __name__ == "__main__":
     with mock_aws():
