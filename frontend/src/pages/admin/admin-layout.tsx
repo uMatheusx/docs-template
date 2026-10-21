@@ -177,7 +177,7 @@ export default function AdminLayout() {
                 {user.username.slice(0, 2)}
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="right" align="end" className="w-64">
+            <DropdownMenuContent side="right" align="end" className="w-72">
               <DropdownMenuLabel className="flex flex-col">
                 <span className="text-sm font-bold text-foreground">{user.username}</span>
                 <span>{user.role === "admin" ? "Administrador" : "Editor"}</span>

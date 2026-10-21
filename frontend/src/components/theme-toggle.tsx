@@ -46,7 +46,7 @@ const OPTIONS: { value: Theme; icon: typeof Sun; label: string }[] = [
 export function ThemeSegmented({ layoutId = "theme-seg" }: { layoutId?: string }) {
   const { theme, setTheme } = useTheme();
   return (
-    <div className="relative flex rounded-xl bg-muted p-1" role="radiogroup" aria-label="Tema">
+    <div className="relative grid grid-cols-3 gap-1 rounded-xl bg-muted p-1" role="radiogroup" aria-label="Tema">
       {OPTIONS.map(({ value, icon: Icon, label }) => (
         <button
           key={value}
@@ -55,14 +55,14 @@ export function ThemeSegmented({ layoutId = "theme-seg" }: { layoutId?: string }
           aria-checked={theme === value}
           onClick={() => setTheme(value)}
           className={cn(
-            "relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors",
+            "relative z-10 flex min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors",
             theme === value ? "text-foreground" : "text-muted-foreground hover:text-foreground",
           )}
         >
           {theme === value && (
             <motion.span layoutId={layoutId} className="absolute inset-0 -z-10 rounded-lg bg-background shadow-sm" />
           )}
-          <Icon className="h-3.5 w-3.5" /> {label}
+          <Icon className="h-3.5 w-3.5 shrink-0" /> {label}
         </button>
       ))}
     </div>

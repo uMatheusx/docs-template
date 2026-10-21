@@ -4,6 +4,7 @@ import {
   CircleDot,
   ExternalLink,
   GitMerge,
+  GitPullRequest,
   Loader2,
   MessageSquare,
   PenLine,
@@ -43,6 +44,8 @@ import { cn, formatDate, splitLeadingH1, timeAgo } from "@/lib/utils";
 import { ReviewStatusBadge } from "@/pages/admin/reviews";
 
 const EVENT_TONE: Partial<Record<ReviewEvent["type"], { icon: typeof Check; className: string }>> = {
+  created: { icon: GitPullRequest, className: "bg-brand text-navy-900" },
+  comment: { icon: MessageSquare, className: "bg-foreground/80 text-background" },
   approved: { icon: Check, className: "bg-emerald-500 text-white" },
   changes_requested: { icon: TriangleAlert, className: "bg-amber-500 text-white" },
   merged: { icon: GitMerge, className: "bg-violet-500 text-white" },
