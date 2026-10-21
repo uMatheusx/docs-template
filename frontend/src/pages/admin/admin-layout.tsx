@@ -4,6 +4,7 @@ import {
   FilePlus2,
   FileUp,
   GitPullRequest,
+  Layers,
   Images,
   LayoutGrid,
   Loader2,
@@ -51,6 +52,7 @@ export const useAdmin = () => useOutletContext<AdminContext>();
 const NAV: { to: string; label: string; icon: LucideIcon; end: boolean }[] = [
   { to: "/admin", label: "Visão geral", icon: LayoutGrid, end: true },
   { to: "/admin/pages", label: "Studio", icon: PenSquare, end: false },
+  { to: "/admin/changes", label: "Alterações", icon: Layers, end: false },
   { to: "/admin/reviews", label: "Revisões", icon: GitPullRequest, end: false },
   { to: "/admin/media", label: "Mídia", icon: Images, end: true },
 ];

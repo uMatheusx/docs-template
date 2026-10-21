@@ -48,6 +48,7 @@ const router = createBrowserRouter([
       { path: "pages", lazy: lazyPage(() => import("@/pages/admin/pages")) },
       { path: "pages/:id", lazy: lazyPage(() => import("@/pages/admin/pages")) },
       { path: "media", lazy: lazyPage(() => import("@/pages/admin/media")) },
+      { path: "changes", lazy: lazyPage(() => import("@/pages/admin/changes")) },
       { path: "reviews", lazy: lazyPage(() => import("@/pages/admin/reviews")) },
       { path: "reviews/:id", lazy: lazyPage(() => import("@/pages/admin/review-detail")) },
     ],

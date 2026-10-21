@@ -7,7 +7,6 @@ import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
 import CodeMirror from "@uiw/react-codemirror";
 import {
   Check,
-  ChevronDown,
   Columns2,
   CopyPlus,
   Download,
@@ -23,7 +22,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   PencilLine,
-  Save,
   FileDiff,
   RotateCcw,
   Trash2,
@@ -42,7 +40,9 @@ import { SLASH_IMAGE_EVENT, setSlashPages, slashCommands } from "@/components/ad
 import { MovePageDialog } from "@/components/admin/move-page-dialog";
 import { ReviewDialog, type ReviewDraft } from "@/components/admin/review-dialog";
 import { SaveTemplateDialog } from "@/components/admin/save-template-dialog";
+import { FIELDS, rebaseLocal, toDraft } from "@/lib/draft";
 import { ChangesDialog } from "@/components/admin/changes-dialog";
+import { ReviewFlow } from "@/components/admin/review-flow";
 import { VersionHistory } from "@/components/admin/version-history";
 import { clearLocal, readLocal, writeLocal, type LocalDraft } from "@/lib/local-drafts";
 import { flattenTree } from "@/lib/tree";
@@ -67,7 +67,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
@@ -88,20 +87,10 @@ const MODES: { id: Mode; label: string; icon: typeof Eye }[] = [
   { id: "split", label: "Dividir", icon: Columns2 },
   { id: "read", label: "Ler", icon: Eye },
 ];
-const FIELDS = ["title", "slug", "icon", "description", "published", "content"] as const;
 const MD_FILE = /\.(md|markdown|mdx|txt)$/i;
 const SPEC_FILE = /\.(ya?ml|json)$/i;
 const FILES_EVENT = "ah:files";
 type FilesEventDetail = { files: File[]; pos?: number };
-
-const toDraft = (p: Page): Draft => ({
-  title: p.title,
-  slug: p.slug,
-  icon: p.icon,
-  description: p.description,
-  published: p.published,
-  content: p.content,
-});
 
 /** O que já está guardado fora do editor: uma proposta carregada ou um "Salvar" local. */
 interface Persisted {
@@ -116,21 +105,6 @@ function readLocalDraft(page: Page): LocalDraft | null {
   if (!local) return null;
   const base = toDraft(page);
   return FIELDS.some((f) => local.draft[f] !== base[f]) ? local : null;
-}
-
-/**
- * Rascunho feito numa versão mais antiga: título, slug, ícone, descrição e publicação que o usuário não
- * mexeu acompanham a página atual (senão a proposta desfaria mudanças de outras pessoas). O texto fica
- * como está: quem o combina com o atual é o servidor, ao aplicar, a partir da versão-base.
- */
-function rebaseLocal(local: LocalDraft, page: Page): Draft {
-  if (!local.baseDraft || local.baseVersion === page.version) return local.draft;
-  const current = toDraft(page);
-  const next = { ...local.draft };
-  for (const field of FIELDS) {
-    if (field !== "content" && local.draft[field] === local.baseDraft[field]) Object.assign(next, { [field]: current[field] });
-  }
-  return next;
 }
 
 function parseFrontmatter(text: string): { meta: Record<string, string>; body: string } {
@@ -202,7 +176,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         }
       : { version: page.version, semver: page.semver, fields: toDraft(page) },
   );
-  // "Salvar" explícito = salvo localmente (pronto para enviar); o restante restaurado é "modificado, não salvo"
+  // "Salvar" explícito = salvo localmente (pronto para enviar); o restante é "modificado, não salvo"
   const [persisted, setPersisted] = useState<Persisted | null>(() =>
     stored?.explicit ? { kind: "local", snapshot: rebaseLocal(stored, page) } : null,
   );
@@ -270,20 +244,6 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
   // ------------------------------------------------------------ rascunho local (automático e "Salvar")
-  useEffect(() => {
-    if (!stored) return;
-    const older = stored.baseVersion !== page.version;
-    toast.info("Rascunho local restaurado", {
-      id: "local-draft-restored",
-      description: older
-        ? `Feito sobre a versão ${stored.baseSemver ?? legacySemver(stored.baseVersion)}; a página está na ${page.semver}. As mudanças se combinam quando a proposta for aplicada.`
-        : stored.explicit
-          ? "As alterações salvas neste navegador voltaram ao editor. Envie para revisão quando estiver pronto."
-          : "As alterações que você estava fazendo voltaram ao editor, ainda não salvas. Use Salvar para guardá-las e depois envie para revisão.",
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- só ao abrir a página
-  }, []);
-
   // sempre o estado mais recente, para gravar no último instante (ao sair da página ou fechar a aba)
   const latest = useRef({ draft, dirty, unsaved, persisted, origin });
   useEffect(() => {
@@ -740,20 +700,14 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-            {!baseline.published && (
-              <span title={unsaved ? "Salve antes de pedir a publicação" : undefined}>
-                <Button variant="secondary" onClick={openReview} disabled={saving || unsaved}>
-                  <GitPullRequest /> Pedir publicação
-                </Button>
-              </span>
-            )}
-            <SaveButton
+            <ReviewFlow
+              reviewOnly={reviewOnly}
               dirty={dirty}
               unsaved={unsaved}
               saving={saving}
               onSave={save}
-              reviewOnly={reviewOnly}
               onReview={openReview}
+              onSendMany={() => navigate(`/admin/changes?select=${baseline.id}`)}
             />
           </div>
         </div>
@@ -785,6 +739,12 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
             </>
           ) : (
             reviewOnly && <span className="font-semibold">Página publicada: suas alterações viram uma proposta que um administrador revisa.</span>
+          )}
+          {reviewOnly && origin.version !== baseline.version && (
+            <span className="text-xs text-muted-foreground">
+              Seu rascunho foi feito sobre a versão {origin.semver}; a página já está na {baseline.semver}. As mudanças se combinam quando a
+              proposta for aplicada.
+            </span>
           )}
           {otherReviews.length > 0 && (
             <span className="ml-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -1152,99 +1112,5 @@ function SaveState({
                 : `Salvo · ${version}`}
       </motion.span>
     </AnimatePresence>
-  );
-}
-
-/** Salvar rápido (Ctrl+S) ou com uma descrição que aparece no histórico. */
-function SaveButton({
-  dirty,
-  unsaved,
-  saving,
-  onSave,
-  reviewOnly,
-  onReview,
-}: {
-  /** há diferença para a página */
-  dirty: boolean;
-  /** há diferença que ainda não foi guardada em lugar nenhum */
-  unsaved: boolean;
-  saving: boolean;
-  onSave: (note?: string) => Promise<boolean>;
-  reviewOnly: boolean;
-  onReview: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [note, setNote] = useState("");
-  const submit = async () => {
-    if (await onSave(note)) {
-      setNote("");
-      setOpen(false);
-    }
-  };
-  if (reviewOnly) {
-    // página publicada: salvar é local (para poder sair e voltar); publicar é só pela revisão
-    return (
-      <div className="flex items-center gap-2">
-        <Button variant="secondary" onClick={() => onSave()} disabled={!unsaved || saving}>
-          <Save /> Salvar
-          <kbd className="ml-0.5 hidden lg:inline-flex">{modKey} S</kbd>
-        </Button>
-        <span title={unsaved ? "Salve antes de enviar para revisão" : undefined}>
-          <Button onClick={onReview} disabled={!dirty || unsaved || saving}>
-            {saving ? <Loader2 className="animate-spin" /> : <GitPullRequest />} Enviar para revisão
-          </Button>
-        </span>
-      </div>
-    );
-  }
-  return (
-    <div className="flex">
-      <Button onClick={() => onSave()} disabled={!dirty || saving} className="rounded-r-none pr-3">
-        {saving ? <Loader2 className="animate-spin" /> : <Save />} Salvar
-        <kbd className="ml-0.5 hidden border-background/25 bg-background/15 text-background/80 lg:inline-flex">{modKey} S</kbd>
-      </Button>
-      <Popover open={open} onOpenChange={setOpen}>
-        <Hint label="Salvar com descrição">
-          <PopoverTrigger asChild>
-            <Button
-              disabled={!dirty || saving}
-              className="rounded-l-none border-l border-background/20 px-2"
-              aria-label="Salvar com descrição"
-            >
-              <ChevronDown />
-            </Button>
-          </PopoverTrigger>
-        </Hint>
-        <PopoverContent align="end" className="w-80">
-          <p className="text-sm font-bold">Salvar com descrição</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Aparece no histórico de versões, como uma mensagem de commit.
-          </p>
-          <textarea
-            autoFocus
-            value={note}
-            maxLength={200}
-            rows={3}
-            onChange={(e) => setNote(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            placeholder="Ex.: Atualiza o fluxo de autenticação com PKCE"
-            className="mt-3 w-full resize-none rounded-xl border bg-background/60 px-3 py-2 text-sm outline-none focus:border-brand/50 focus:ring-4 focus:ring-brand/10"
-          />
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-[11px] text-muted-foreground">
-              {note.length}/200 · {modKey}+Enter
-            </span>
-            <Button size="sm" onClick={submit} disabled={saving}>
-              {saving ? <Loader2 className="animate-spin" /> : <Save />} Salvar versão
-            </Button>
-          </div>
-        </PopoverContent>
-      </Popover>
-    </div>
   );
 }

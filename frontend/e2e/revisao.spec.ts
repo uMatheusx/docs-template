@@ -42,7 +42,6 @@ test("Salvar guarda neste navegador: dá para trocar de página e voltar, e só 
 
   // voltando, o rascunho local volta sozinho
   await page.goto(`/admin/pages/${guia.id}`);
-  await expect(page.getByText("Rascunho local restaurado")).toBeVisible();
   await expect(page.getByText("Texto salvo só neste navegador.").first()).toBeVisible();
   await expect(page.getByText("Salvo neste navegador · não enviado")).toBeVisible();
 
@@ -52,7 +51,6 @@ test("Salvar guarda neste navegador: dá para trocar de página e voltar, e só 
   await page.getByRole("button", { name: "Enviar proposta" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
   await page.goto(`/admin/pages/${guia.id}`);
-  await expect(page.getByText("Rascunho local restaurado")).toHaveCount(0);
 
   // limpa: fecha a proposta para não interferir nos outros testes
   const reviews = await (await page.request.get(`/api/admin/reviews?state=active&page_id=${guia.id}`)).json();
@@ -284,7 +282,6 @@ test("o que está sendo editado é guardado sozinho: sair e voltar traz de volta
   await page.getByRole("alertdialog").getByRole("button", { name: "Descartar" }).click();
   await expect(page.getByText("Texto digitado, sem apertar Salvar.")).toHaveCount(0);
   await page.goto(`/admin/pages/${faq.id}`);
-  await expect(page.getByText("Rascunho local restaurado")).toHaveCount(0);
   await expect(page.getByText("Texto digitado, sem apertar Salvar.")).toHaveCount(0);
 });
 
@@ -478,4 +475,40 @@ test("ver o diff local, comparar com o último Salvar e restaurar o último salv
   await page.getByRole("button", { name: "Mais ações" }).click();
   await page.getByRole("menuitem", { name: /Descartar alterações/ }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Descartar" }).click();
+});
+
+test("enviar várias páginas de uma vez: cada página salva vira uma proposta", async ({ page }) => {
+  await loginAs(page, "admin");
+  const guia = await findPage(page.request, "guia-de-escrita");
+  const outra = await findPage(page.request, "arquitetura");
+
+  for (const [id, texto] of [
+    [guia.id, "Lote um."],
+    [outra.id, "Lote dois."],
+  ]) {
+    await page.goto(`/admin/pages/${id}`);
+    await appendToEditor(page, `\n\n${texto}`);
+    await page.getByRole("button", { name: /^Salvar/ }).click();
+    await expect(page.getByText("Salvo neste navegador · não enviado")).toBeVisible();
+  }
+
+  // pelo menu do botão de enviar
+  await page.getByRole("button", { name: "Mais opções de envio" }).click();
+  await page.getByRole("menuitem", { name: /Enviar várias páginas/ }).click();
+  await expect(page).toHaveURL(/\/admin\/changes/);
+  await expect(page.getByTestId("change-row")).toHaveCount(2);
+
+  await page.getByRole("checkbox", { name: /Selecionar/ }).first().check();
+  await page.getByRole("checkbox", { name: /Selecionar/ }).last().check();
+  const enviar = page.getByRole("button", { name: /Enviar para revisão \(2\)/ });
+  await expect(enviar).toBeDisabled(); // falta a descrição
+  await page.getByLabel(/Descrição/).fill("Duas páginas juntas.");
+  await enviar.click();
+  await expect(page.getByText("2 propostas enviadas para revisão")).toBeVisible();
+
+  for (const id of [guia.id, outra.id]) {
+    const reviews = await (await page.request.get(`/api/admin/reviews?state=active&page_id=${id}`)).json();
+    expect(reviews).toHaveLength(1);
+    await page.request.post(`/api/admin/reviews/${reviews[0].id}/close`);
+  }
 });
