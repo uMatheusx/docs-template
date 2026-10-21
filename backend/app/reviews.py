@@ -185,7 +185,7 @@ class ReviewService:
             version=page.get("version"),
             note=f"Revisão #{review['number']}: {review['title']}"[:200],
         )
-        saved = self.docs.update_page(review["page_id"], update, review["author"], role="admin")
+        saved = self.docs.update_page(review["page_id"], update, review["author"], via_review=True)
         review["status"] = "merged"
         review["merged_version"] = saved["version"]
         self._save(review, _event("merged", user.username, f"Aplicada como v{saved['version']}."))

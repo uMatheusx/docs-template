@@ -1,6 +1,6 @@
 import os
 
-from .conftest import find, login
+from .conftest import apply_change, find, login, publish
 
 SPEC = """openapi: 3.0.3
 info:
@@ -40,6 +40,7 @@ def test_api_reference_embeds_are_link_checked(admin):
         "```asyncapi\nref: /docs/referencia-api/api-rest\n```\n"
     )
     page = admin.post("/api/admin/pages", json={"title": "Guia com API", "content": content}).json()
+    publish(admin, page["id"])
     report = admin.get("/api/admin/link-report").json()
     mine = sorted((i["kind"], i["target"], i["line"]) for i in report["issues"] if i["page_id"] == page["id"])
     # a segunda aponta para página inexistente; a terceira para uma OpenAPI usando ```asyncapi
@@ -58,6 +59,7 @@ def test_link_report(admin):
         "![sumiu](/api/assets/abc123def456/nada.png)\n"
     )
     page = admin.post("/api/admin/pages", json={"title": "Com links", "content": content}).json()
+    publish(admin, page["id"])  # o relatório só olha páginas publicadas
     report = admin.get("/api/admin/link-report").json()
     mine = sorted((i["kind"], i["target"], i["line"]) for i in report["issues"] if i["page_id"] == page["id"])
     assert mine == [
@@ -74,7 +76,7 @@ def test_editor_permissions_and_review_flow(client):
     login(client, "edna")
     assert client.get("/api/site").json()["user"]["role"] == "editor"
     created = client.post("/api/admin/pages", json={"title": "Nova do editor", "published": True}).json()
-    assert created["published"] is False  # editor só cria rascunho
+    assert created["published"] is False  # ninguém publica ao criar
     assert (
         client.put(f"/api/admin/pages/{faq['id']}", json={"content": "x", "version": faq["version"]}).status_code == 403
     )
@@ -94,7 +96,12 @@ def test_editor_permissions_and_review_flow(client):
     # reenviar atualiza a mesma proposta (não cria outra)
     again = client.post(
         f"/api/admin/pages/{faq['id']}/reviews",
-        json={"title": "Atualiza FAQ", "content": "# FAQ\n\nNovo 2", "base_version": faq["version"]},
+        json={
+            "title": "Atualiza FAQ",
+            "description": "Nova pergunta, revisada.",
+            "content": "# FAQ\n\nNovo 2",
+            "base_version": faq["version"],
+        },
     ).json()
     assert again["id"] == review["id"] and [e["type"] for e in again["events"]] == ["created", "updated"]
 
@@ -122,14 +129,19 @@ def test_review_rules_conflict_and_self_approval(admin):
     faq = find(admin.get("/api/admin/tree").json(), "faq")
     own = admin.post(
         f"/api/admin/pages/{faq['id']}/reviews",
-        json={"title": "Minha", "fields": {"description": "Nova descrição"}, "base_version": faq["version"]},
+        json={
+            "title": "Minha",
+            "description": "Atualiza a descrição.",
+            "fields": {"description": "Nova descrição"},
+            "base_version": faq["version"],
+        },
     ).json()
-    assert admin.post(f"/api/admin/reviews/{own['id']}/approve", json={}).status_code == 403  # própria proposta
+    # o autor pode aprovar a própria proposta (REVIEW_SELF_APPROVAL é verdadeiro por padrão)
+    assert admin.post(f"/api/admin/reviews/{own['id']}/approve", json={}).status_code == 200
 
-    # a página muda depois da proposta: aplicar exige confirmação (force)
-    admin.put(f"/api/admin/pages/{faq['id']}", json={"content": "# FAQ v+1", "version": faq["version"]})
+    # outro admin muda a página depois da proposta: aplicar exige confirmação (force)
     login(admin, "rui")
-    admin.post(f"/api/admin/reviews/{own['id']}/approve", json={})
+    apply_change(admin, faq["id"], content="# FAQ v+1")
     assert admin.post(f"/api/admin/reviews/{own['id']}/merge", json={}).status_code == 409
     merged = admin.post(f"/api/admin/reviews/{own['id']}/merge", json={"force": True}).json()
     assert merged["status"] == "merged"

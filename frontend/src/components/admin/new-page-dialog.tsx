@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useSession } from "@/hooks/use-session";
 import { docsApi, keys, type Template, type TreeNode } from "@/lib/api";
@@ -146,9 +145,7 @@ function NewPageForm({
   const navigate = useNavigate();
   const [parent, setParent] = useState<string | null>(parentId);
   const [icon, setIcon] = useState<string | null>(template.id === "blank" ? null : template.icon);
-  const [published, setPublished] = useState(false);
   const [saving, setSaving] = useState(false);
-  const isAdmin = user?.role === "admin";
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -161,7 +158,7 @@ function NewPageForm({
         description: String(form.get("description") ?? ""),
         parent_id: parent,
         icon,
-        published: isAdmin && published,
+        published: false,
         kind: template.kind,
         content: fillTemplate(template.content, { title, author: user?.username ?? "" }),
       });
@@ -216,15 +213,9 @@ function NewPageForm({
         <Label htmlFor="np-desc">Descrição</Label>
         <Textarea id="np-desc" name="description" maxLength={500} rows={2} placeholder="Resumo exibido nos cards e na busca" />
       </div>
-      {isAdmin ? (
-        <label className="flex items-center gap-3 text-sm">
-          <Switch checked={published} onCheckedChange={setPublished} /> Publicar imediatamente
-        </label>
-      ) : (
-        <p className="rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">
-          A página nasce como rascunho. Quando estiver pronta, envie para revisão pedindo a publicação.
-        </p>
-      )}
+      <p className="rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">
+        A página nasce como rascunho. Quando estiver pronta, envie para revisão pedindo a publicação.
+      </p>
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone}>
           Cancelar

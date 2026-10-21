@@ -31,12 +31,49 @@ export async function findPage(request: APIRequestContext, pagePath: string): Pr
   throw new Error(`Página não encontrada: ${pagePath}`);
 }
 
+/**
+ * Muda uma página pelo caminho obrigatório (proposta → aprovação → aplicação), direto pela API.
+ * Quem está logado aprova a própria proposta.
+ */
+export async function changeViaReview(
+  request: APIRequestContext,
+  pageId: string,
+  change: { content?: string; fields?: Record<string, unknown> },
+) {
+  const page = await (await request.get(`/api/admin/pages/${pageId}`)).json();
+  const created = await request.post(`/api/admin/pages/${pageId}/reviews`, {
+    data: {
+      title: "Alteração de teste",
+      description: "Feita pelo caminho de revisão.",
+      content: change.content ?? null,
+      fields: change.fields ?? {},
+      base_version: page.version,
+    },
+  });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  const review = await created.json();
+  expect((await request.post(`/api/admin/reviews/${review.id}/approve`, { data: {} })).ok()).toBeTruthy();
+  const merged = await request.post(`/api/admin/reviews/${review.id}/merge`, { data: {} });
+  expect(merged.ok(), await merged.text()).toBeTruthy();
+}
+
 /** Acrescenta texto ao fim do editor de markdown (CodeMirror). */
 export async function appendToEditor(page: Page, text: string) {
   const editor = page.locator(".cm-content").first();
   await editor.click();
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type(text);
+}
+
+/** Aprova e aplica a primeira proposta aberta que contém `title`, pela tela de Revisões. */
+export async function approveAndApply(page: Page, title: string) {
+  await page.goto("/admin/reviews");
+  await page.getByText(title).first().click();
+  await page.getByRole("button", { name: "Aprovar" }).click();
+  await page.getByRole("button", { name: "Aplicar na página" }).click();
+  const confirm = page.getByRole("alertdialog");
+  if (await confirm.isVisible().catch(() => false)) await confirm.getByRole("button", { name: /Aplicar/ }).click();
+  await expect(page.getByText(/Aplicada|aplicada/).first()).toBeVisible();
 }
 
 /** Sufixo único: os testes compartilham o backend e não podem colidir. */

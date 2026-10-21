@@ -46,7 +46,8 @@ export function ReviewDialog({ open, onOpenChange, ...rest }: Props) {
 }
 
 function ReviewForm({ pageTitle, changed, existing, canRequestPublish, saving, onSubmit, onDone }: Omit<Props, "open" | "onOpenChange"> & { onDone: () => void }) {
-  const [requestPublish, setRequestPublish] = useState(!!existing?.fields.published);
+  // em rascunho, o motivo de abrir uma proposta é publicar: já vem marcado
+  const [requestPublish, setRequestPublish] = useState(existing ? !!existing.fields.published : canRequestPublish);
   const nothing = changed.length === 0 && !requestPublish;
 
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -65,7 +66,7 @@ function ReviewForm({ pageTitle, changed, existing, canRequestPublish, saving, o
       <DialogHeader>
         <DialogTitle>{existing ? `Atualizar a proposta #${existing.number}` : "Enviar para revisão"}</DialogTitle>
         <DialogDescription>
-          A página não muda agora: um administrador revisa as alterações e as aplica. Você acompanha tudo em Revisões.
+          A página não muda agora: a proposta precisa ser aprovada e aplicada por um administrador, que pode ser você. Tudo fica registrado em Revisões.
         </DialogDescription>
       </DialogHeader>
       <div className="flex flex-wrap gap-1.5 text-xs">
@@ -84,10 +85,11 @@ function ReviewForm({ pageTitle, changed, existing, canRequestPublish, saving, o
         <Input id="rv-title" name="title" required maxLength={200} autoFocus defaultValue={existing?.title ?? `Atualiza ${pageTitle}`} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="rv-desc">O que mudou e por quê</Label>
+        <Label htmlFor="rv-desc">O que mudou e por quê (obrigatório)</Label>
         <Textarea
           id="rv-desc"
           name="description"
+          required
           maxLength={2000}
           rows={4}
           defaultValue={existing?.description ?? ""}

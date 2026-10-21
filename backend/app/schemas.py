@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, ValidationInfo, field_validator
 
 PageKind = Literal["doc", "openapi", "asyncapi"]
 
@@ -169,10 +169,20 @@ class ReviewFields(BaseModel):
 
 class ReviewInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)
-    description: str = Field(default="", max_length=2000)
+    # obrigatória: quem revisa precisa saber o que mudou e por quê
+    description: str = Field(min_length=1, max_length=2000)
     content: str | None = None
     fields: ReviewFields = ReviewFields()
     base_version: int
+
+    @field_validator("title", "description")
+    @classmethod
+    def _not_blank(cls, value: str, info: ValidationInfo) -> str:
+        value = value.strip()
+        if not value:
+            message = "Descreva o que mudou e por quê." if info.field_name == "description" else "Informe um resumo."
+            raise ValueError(message)
+        return value
 
 
 class ReviewEvent(BaseModel):

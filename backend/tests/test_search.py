@@ -1,5 +1,7 @@
 from app.markdown_utils import fold
 
+from .conftest import apply_change, publish
+
 
 def paths(results):
     return [r["path"] for r in results]
@@ -23,12 +25,12 @@ def test_snippet_keeps_original_accents(client):
 
 
 def test_index_follows_writes(admin):
-    body = {"title": "Glossário", "content": "# Glossário\n\nTermo zarabatana.", "published": True}
+    body = {"title": "Glossário", "content": "# Glossário\n\nTermo zarabatana."}
     page = admin.post("/api/admin/pages", json=body).json()
+    publish(admin, page["id"])
     assert paths(admin.get("/api/search", params={"q": "zarabatana"}).json()) == ["glossario"]
 
-    update = {"content": "# Glossário\n\nTermo novo.", "version": page["version"]}
-    admin.put(f"/api/admin/pages/{page['id']}", json=update)
+    apply_change(admin, page["id"], content="# Glossário\n\nTermo novo.")
     assert admin.get("/api/search", params={"q": "zarabatana"}).json() == []
 
 

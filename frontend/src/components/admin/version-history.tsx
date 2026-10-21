@@ -59,6 +59,9 @@ interface VersionHistoryProps {
   /** versão selecionada ao abrir (`current` ou id do histórico) */
   initialId?: string;
   onRestored: (page: Page) => Promise<void> | void;
+  /** página publicada: restaurar vira "carregar no editor" e a mudança segue por revisão */
+  reviewOnly?: boolean;
+  onUseVersion?: (content: string, label: string) => void;
 }
 
 export function VersionHistory({ open, onOpenChange, ...props }: VersionHistoryProps) {
@@ -100,7 +103,7 @@ const versionLabel = (item: Item) =>
 /** rótulo curto para o selo da linha do tempo */
 const versionBadge = (item: Item) => (item.version ? `v${item.version}` : "antiga");
 
-function HistoryBody({ page, dirty, initialId, onRestored, onClose }: Omit<VersionHistoryProps, "open" | "onOpenChange"> & { onClose: () => void }) {
+function HistoryBody({ page, dirty, initialId, onRestored, reviewOnly, onUseVersion, onClose }: Omit<VersionHistoryProps, "open" | "onOpenChange"> & { onClose: () => void }) {
   const { data: entries, isLoading, mutate } = useSWR<HistoryEntry[]>(keys.history(page.id));
   const [selectedId, setSelectedId] = useState(initialId ?? CURRENT);
   const [mode, setMode] = useState<"changes" | "preview">("changes");
@@ -383,15 +386,28 @@ function HistoryBody({ page, dirty, initialId, onRestored, onClose }: Omit<Versi
               <Download /> Baixar .md
             </Button>
             <span className="ml-auto hidden text-xs text-muted-foreground lg:inline">
-              Restaurar cria uma nova versão; nada é apagado.
+              {reviewOnly
+                ? "A página está publicada: a versão vai para o editor e segue por revisão."
+                : "Restaurar cria uma nova versão; nada é apagado."}
             </span>
             {selected.current ? (
               <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                 <Check className="h-4 w-4" /> Esta é a versão publicada agora
               </span>
             ) : (
-              <Button size="sm" onClick={() => setConfirming(true)} disabled={target.content === undefined}>
-                <RotateCcw /> Restaurar {versionLabel(selected)}
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (reviewOnly && target.content !== undefined) {
+                    onUseVersion?.(target.content, versionLabel(selected));
+                    onClose();
+                  } else {
+                    setConfirming(true);
+                  }
+                }}
+                disabled={target.content === undefined}
+              >
+                <RotateCcw /> {reviewOnly ? `Usar ${versionLabel(selected)} no editor` : `Restaurar ${versionLabel(selected)}`}
               </Button>
             )}
           </footer>

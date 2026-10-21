@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     # Usuários extras: "nome:senha:papel,nome2:senha2:papel" (papéis: admin, editor)
     users: str = ""
     # Permite que o autor de uma proposta também a aprove (útil com um único admin)
-    review_self_approval: bool = False
+    review_self_approval: bool = True
 
     # HTTP
     frontend_dist: str = "../frontend/dist"

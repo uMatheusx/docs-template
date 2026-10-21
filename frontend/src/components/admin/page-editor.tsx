@@ -206,13 +206,11 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const kind = baseline.kind ?? "doc";
   const isSpec = kind !== "doc";
   const specJson = isSpec && isJsonText(draft.content);
-  // editores não alteram páginas publicadas diretamente: as mudanças viram propostas de revisão
-  const reviewOnly = !isAdmin && baseline.published;
-  const publishLock = isAdmin
-    ? undefined
-    : baseline.published
-      ? "Alterações passam por revisão antes de publicar"
-      : "Um administrador publica esta página";
+  // ninguém altera páginas publicadas diretamente: as mudanças viram propostas de revisão (com descrição)
+  const reviewOnly = baseline.published;
+  const publishLock = baseline.published
+    ? "Alterações passam por revisão antes de publicar"
+    : "Para publicar, envie para revisão pedindo a publicação";
   const { data: pageReviews, mutate: refreshReviews } = useSWR<Review[]>(keys.reviews("active", baseline.id));
   const myReview = pageReviews?.find((r) => r.author === user?.username);
   const otherReviews = pageReviews?.filter((r) => r !== myReview) ?? [];
@@ -574,6 +572,11 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+            {!baseline.published && (
+              <Button variant="secondary" onClick={() => setReviewOpen(true)} disabled={saving}>
+                <GitPullRequest /> Pedir publicação
+              </Button>
+            )}
             <SaveButton dirty={dirty} saving={saving} onSave={save} reviewOnly={reviewOnly} onReview={() => setReviewOpen(true)} />
           </div>
         </div>
@@ -792,6 +795,13 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         page={baseline}
         dirty={dirty}
         initialId={history.id}
+        reviewOnly={reviewOnly}
+        onUseVersion={(content, label) => {
+          set("content", content);
+          toast.success(`Versão ${label} carregada no editor`, {
+            description: "Revise e use Enviar para revisão para aplicar na página publicada.",
+          });
+        }}
         onRestored={async (restored) => {
           reset(restored);
           await refreshCaches(restored);
@@ -804,7 +814,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         pageTitle={baseline.title}
         changed={changed}
         existing={myReview}
-        canRequestPublish={!isAdmin && !baseline.published}
+        canRequestPublish={!baseline.published}
         saving={saving}
         onSubmit={submitReview}
       />
@@ -937,7 +947,7 @@ function SaveButton({
             onClick={() => (setOpen(false), onReview())}
             className="mt-3 flex w-full items-center gap-2 border-t pt-3 text-left text-xs font-semibold text-muted-foreground hover:text-foreground"
           >
-            <GitPullRequest className="h-3.5 w-3.5 text-brand" /> Enviar para revisão em vez de publicar direto
+            <GitPullRequest className="h-3.5 w-3.5 text-brand" /> Enviar para revisão pedindo a publicação
           </button>
         </PopoverContent>
       </Popover>

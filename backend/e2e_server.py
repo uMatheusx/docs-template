@@ -18,7 +18,7 @@ os.environ.update(
     FRONTEND_DIST="__no_dist__",
     APP_ENV="development",
     PUBLIC_READ="true",
-    REVIEW_SELF_APPROVAL="false",
+    REVIEW_SELF_APPROVAL="true",
     # credenciais só deste ambiente de teste (repetidas em frontend/e2e/fixtures.ts)
     ADMIN_USERNAME="admin",
     ADMIN_PASSWORD="e2e-admin-senha",

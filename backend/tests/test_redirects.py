@@ -1,4 +1,4 @@
-from .conftest import find
+from .conftest import apply_change, find
 
 
 def resolve(client, path):
@@ -8,7 +8,7 @@ def resolve(client, path):
 
 def test_renamed_slug_redirects(admin):
     faq = find(admin.get("/api/admin/tree").json(), "faq")
-    admin.put(f"/api/admin/pages/{faq['id']}", json={"slug": "perguntas", "version": faq["version"]})
+    apply_change(admin, faq["id"], fields={"slug": "perguntas"})
     assert resolve(admin, "faq") == "perguntas"
     assert resolve(admin, "/faq/") == "perguntas"
 
@@ -24,8 +24,8 @@ def test_moved_page_redirects_with_children(admin):
 
 def test_successive_changes_do_not_chain(admin):
     faq = find(admin.get("/api/admin/tree").json(), "faq")
-    page = admin.put(f"/api/admin/pages/{faq['id']}", json={"slug": "perguntas", "version": faq["version"]}).json()
-    admin.put(f"/api/admin/pages/{faq['id']}", json={"slug": "duvidas", "version": page["version"]})
+    apply_change(admin, faq["id"], fields={"slug": "perguntas"})
+    apply_change(admin, faq["id"], fields={"slug": "duvidas"})
     assert resolve(admin, "faq") == "duvidas"
     assert resolve(admin, "perguntas") == "duvidas"
 
@@ -33,7 +33,7 @@ def test_successive_changes_do_not_chain(admin):
 def test_unknown_and_deleted_pages_are_404(admin):
     assert resolve(admin, "nunca-existiu") == 404
     faq = find(admin.get("/api/admin/tree").json(), "faq")
-    admin.put(f"/api/admin/pages/{faq['id']}", json={"slug": "perguntas", "version": faq["version"]})
+    apply_change(admin, faq["id"], fields={"slug": "perguntas"})
     admin.delete(f"/api/admin/pages/{faq['id']}")
     assert resolve(admin, "faq") == 404
 

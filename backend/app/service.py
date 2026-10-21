@@ -124,9 +124,10 @@ class DocsService:
         }
 
     # ------------------------------------------------------------------ escrita
-    def create_page(self, data: PageCreate, author: str, role: str = "admin") -> dict:
-        if role != "admin":
-            data = data.model_copy(update={"published": False})  # editores só criam rascunhos
+    def create_page(self, data: PageCreate, author: str, *, internal: bool = False) -> dict:
+        if not internal:
+            # ninguém publica ao criar: a publicação passa por revisão (internal = carga inicial de exemplo)
+            data = data.model_copy(update={"published": False})
         pages = self.storage.list_pages()
         if data.parent_id and not any(p["id"] == data.parent_id for p in pages):
             raise not_found("Página pai")
@@ -157,18 +158,22 @@ class DocsService:
         self.storage.put_page(item)
         return self.get_page(page_id, include_drafts=True)
 
-    def update_page(self, page_id: str, data: PageUpdate, author: str, role: str = "admin") -> dict:
+    def update_page(self, page_id: str, data: PageUpdate, author: str, *, via_review: bool = False) -> dict:
+        """Salva alterações. Rascunhos mudam direto; páginas publicadas (e a publicação de um rascunho) só
+        mudam por uma proposta de revisão aplicada (`via_review=True`), para qualquer papel."""
         current = self.storage.get_page(page_id)
         if not current:
             raise not_found()
-        if role != "admin":
+        if not via_review:
             if current.get("published", True):
                 raise HTTPException(
                     status.HTTP_403_FORBIDDEN,
                     "Esta página está publicada: envie as alterações como proposta de revisão.",
                 )
             if data.published:
-                raise HTTPException(status.HTTP_403_FORBIDDEN, "Apenas administradores publicam páginas.")
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN, "Para publicar, envie uma proposta de revisão pedindo a publicação."
+                )
         expected = data.version if data.version is not None else current.get("version", 1)
         if expected != current.get("version", 1):
             raise _conflict()
@@ -243,20 +248,28 @@ class DocsService:
         content = self.storage.get_history(page_id, version_id)
         if content is None:
             raise not_found("Versão")
+        page = self.storage.get_page(page_id)
+        if page and page.get("published", True):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Esta página está publicada: carregue a versão no editor e envie como proposta de revisão.",
+            )
         entry = next((e for e in self.storage.list_history(page_id) if e["id"] == version_id), None)
         label = f"v{entry['version']}" if entry and entry.get("version") else "uma versão anterior"
         return self.update_page(page_id, PageUpdate(content=content, note=f"Restaurada de {label}"), author)
 
     # ------------------------------------------------------------------ importação
-    def import_file(self, filename: str, text: str, parent_id: str | None, author: str, role: str = "admin") -> dict:
+    def import_file(
+        self, filename: str, text: str, parent_id: str | None, author: str, *, internal: bool = False
+    ) -> dict:
         """Markdown ou especificação OpenAPI/AsyncAPI (YAML/JSON)."""
         kind = detect_kind(text.lstrip("\ufeff"))
         if kind:
-            return self.import_spec(filename, text.lstrip("\ufeff"), kind, parent_id, author, role)
-        return self.import_markdown(filename, text, parent_id, author, role)
+            return self.import_spec(filename, text.lstrip("\ufeff"), kind, parent_id, author, internal=internal)
+        return self.import_markdown(filename, text, parent_id, author, internal=internal)
 
     def import_spec(
-        self, filename: str, text: str, kind: str, parent_id: str | None, author: str, role: str = "admin"
+        self, filename: str, text: str, kind: str, parent_id: str | None, author: str, *, internal: bool = False
     ) -> dict:
         spec = parse_spec(text) or {}
         title, description = spec_info(spec)
@@ -273,11 +286,11 @@ class DocsService:
                 kind=kind,
             ),
             author,
-            role,
+            internal=internal,
         )
 
     def import_markdown(
-        self, filename: str, text: str, parent_id: str | None, author: str, role: str = "admin"
+        self, filename: str, text: str, parent_id: str | None, author: str, *, internal: bool = False
     ) -> dict:
         meta, body = parse_frontmatter(text.lstrip("﻿"))
         stem = re.sub(r"\.(md|markdown|mdx|txt)$", "", filename.rsplit("/", 1)[-1], flags=re.I)
@@ -294,10 +307,10 @@ class DocsService:
                 content=body.lstrip("\n"),
             ),
             author,
-            role,
+            internal=internal,
         )
 
-    def import_url(self, url: str, parent_id: str | None, author: str, role: str = "admin") -> dict:
+    def import_url(self, url: str, parent_id: str | None, author: str, *, internal: bool = False) -> dict:
         url = _raw_github_url(url)
         try:
             with httpx.Client(
@@ -310,7 +323,7 @@ class DocsService:
         if len(resp.content) > 2 * 1024 * 1024:
             raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Arquivo maior que 2 MB")
         filename = url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1] or "importado.md"
-        return self.import_file(filename, resp.text, parent_id, author, role)
+        return self.import_file(filename, resp.text, parent_id, author, internal=internal)
 
 
 def _conflict() -> HTTPException:

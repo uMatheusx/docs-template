@@ -66,7 +66,7 @@ def tree(svc: DocsService = Depends(get_service)):
 # ---------------------------------------------------------------- páginas
 @router.post("/pages", response_model=Page, status_code=status.HTTP_201_CREATED)
 def create_page(body: PageCreate, user: User = Depends(require_editor), svc: DocsService = Depends(get_service)):
-    return svc.create_page(body, user.username, user.role)
+    return svc.create_page(body, user.username)
 
 
 @router.get("/pages/{page_id}", response_model=Page)
@@ -78,7 +78,7 @@ def get_page(page_id: str, svc: DocsService = Depends(get_service)):
 def update_page(
     page_id: str, body: PageUpdate, user: User = Depends(require_editor), svc: DocsService = Depends(get_service)
 ):
-    return svc.update_page(page_id, body, user.username, user.role)
+    return svc.update_page(page_id, body, user.username)
 
 
 @router.delete("/pages/{page_id}", dependencies=[Depends(require_admin)])
@@ -218,14 +218,14 @@ async def import_files(
         except UnicodeDecodeError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{file.filename} não é um arquivo UTF-8") from exc
         created.append(
-            svc.import_file(file.filename or "importado.md", text, parent_id or None, user.username, user.role)
+            svc.import_file(file.filename or "importado.md", text, parent_id or None, user.username)
         )
     return created
 
 
 @router.post("/import/url", response_model=Page, status_code=status.HTTP_201_CREATED)
 def import_url(body: ImportUrlRequest, user: User = Depends(require_editor), svc: DocsService = Depends(get_service)):
-    return svc.import_url(str(body.url), body.parent_id, user.username, user.role)
+    return svc.import_url(str(body.url), body.parent_id, user.username)
 
 
 # ---------------------------------------------------------------- mídia

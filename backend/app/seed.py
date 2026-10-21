@@ -33,5 +33,5 @@ def seed_if_empty(service: DocsService) -> None:
     ids: dict[str, str] = {}
     for filename, parent in MANIFEST:
         text = (CONTENT_DIR / filename).read_text(encoding="utf-8")
-        page = service.import_file(filename, text, ids.get(parent) if parent else None, "seed")
+        page = service.import_file(filename, text, ids.get(parent) if parent else None, "seed", internal=True)
         ids[filename] = page["id"]
