@@ -620,8 +620,9 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 <DropdownMenuItem disabled={!dirty} onSelect={() => setConfirmDiscard(true)}>
                   <Undo2 /> Descartar alterações…
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={unsaved} onSelect={openReview}>
-                  <GitPullRequest /> Enviar para revisão…{unsaved && <span className="ml-auto text-xs">salve antes</span>}
+                <DropdownMenuItem disabled={(reviewOnly && !dirty) || unsaved} onSelect={openReview}>
+                  <GitPullRequest /> {reviewOnly ? "Enviar para revisão…" : "Pedir publicação…"}
+                  {unsaved && <span className="ml-auto text-xs">salve antes</span>}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {isAdmin && (
