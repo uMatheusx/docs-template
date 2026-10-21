@@ -366,3 +366,50 @@ test("digitar / no editor oferece link para página e lista as páginas conforme
   // sem salvar: descarta para não deixar rascunho local na página de teste
   await page.evaluate((id) => localStorage.removeItem(`ah-draft:${id}`), faq.id);
 });
+
+test("referências de API: escolhe a especificação e as sugestões vêm da própria especificação", async ({ page }) => {
+  await loginAs(page, "admin");
+  const faq = await findPage(page.request, "faq");
+  await page.goto(`/admin/pages/${faq.id}`);
+  const editor = page.locator(".cm-content").first();
+  const menu = page.locator(".cm-tooltip-autocomplete");
+  const accept = async () => {
+    await page.waitForTimeout(150); // o menu só aceita Enter depois de um instante
+    await page.keyboard.press("Enter");
+  };
+
+  // "/" → Referência OpenAPI: lista só as páginas OpenAPI e insere o bloco já com o ref
+  await editor.click();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n\n/openapi");
+  await expect(menu).toContainText("Referência OpenAPI");
+  await accept();
+  await expect(menu).toContainText("API REST do Account Hub");
+  await expect(menu).not.toContainText("Eventos do Account Hub");
+  await expect(menu).not.toContainText("Alerta");
+  await accept();
+  await expect(editor).toContainText("ref: /docs/referencia-api/api-rest");
+
+  // dentro do bloco, "operations:" sugere as operações da especificação escolhida
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("End");
+  await page.keyboard.type("\noperations:\n  - ");
+  await expect(menu).toContainText("POST /accounts");
+  await expect(menu).toContainText("GET /accounts/{account_id}");
+  await page.keyboard.type("POST /acc");
+  await accept();
+  await expect(editor).toContainText("- POST /accounts");
+
+  // um bloco novo digitado à mão: "ref:" sugere só as especificações do tipo certo
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n```asyncapi\nref: ");
+  await expect(menu).toContainText("/docs/referencia-api/eventos");
+  await expect(menu).not.toContainText("/docs/referencia-api/api-rest");
+  await accept();
+  await page.keyboard.type("\nchannels:\n  - ");
+  await expect(menu).toContainText("accountLifecycle");
+  await expect(menu).toContainText("roleBindings");
+
+  await page.evaluate((id) => localStorage.removeItem(`ah-draft:${id}`), faq.id);
+});

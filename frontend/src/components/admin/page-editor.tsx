@@ -252,7 +252,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     setSlashPages(
       flattenTree(tree)
         .filter((n) => n.id !== baseline.id)
-        .map((n) => ({ id: n.id, title: n.title, path: n.path, published: n.published })),
+        .map((n) => ({ id: n.id, title: n.title, path: n.path, published: n.published, kind: n.kind })),
     );
   }, [tree, baseline.id]);
 
