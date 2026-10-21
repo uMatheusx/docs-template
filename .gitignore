@@ -7,6 +7,10 @@ __pycache__/
 .ruff_cache/
 .env
 *.tsbuildinfo
+# relatórios dos testes de ponta a ponta (Playwright)
+test-results/
+playwright-report/
+blob-report/
 .DS_Store
 
 # capturas de tela soltas e configurações locais do Claude Code
