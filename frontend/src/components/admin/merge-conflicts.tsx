@@ -7,8 +7,9 @@ interface Props {
   conflicts: MergeConflict[];
   choices: (MergeChoice | null)[];
   onChange: (index: number, choice: MergeChoice) => void;
-  baseVersion: number;
-  currentVersion: number;
+  /** versão x.y.z em que a proposta se baseou e versão atual da página */
+  baseSemver: string;
+  currentSemver: string;
 }
 
 const OPTIONS: { value: MergeChoice; label: string; hint: string }[] = [
@@ -35,7 +36,7 @@ function Snippet({ text, tone }: { text: string; tone: "ours" | "theirs" | "cont
 }
 
 /** Um conflito de cada vez: mostra o contexto, os dois lados e as três opções de resolução. */
-export function MergeConflicts({ conflicts, choices, onChange, baseVersion, currentVersion }: Props) {
+export function MergeConflicts({ conflicts, choices, onChange, baseSemver, currentSemver }: Props) {
   const resolved = choices.filter(Boolean).length;
   return (
     <section aria-label="Conflitos a resolver" className="rounded-3xl border border-amber-500/40 bg-card">
@@ -57,7 +58,7 @@ export function MergeConflicts({ conflicts, choices, onChange, baseVersion, curr
               {c.before && <Snippet text={c.before} tone="context" />}
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-1.5">
-                  <p className="text-xs font-semibold text-sky-700 dark:text-sky-300">Na página (v{currentVersion})</p>
+                  <p className="text-xs font-semibold text-sky-700 dark:text-sky-300">Na página ({currentSemver})</p>
                   <Snippet text={c.ours} tone="ours" />
                 </div>
                 <div className="space-y-1.5">
@@ -67,7 +68,7 @@ export function MergeConflicts({ conflicts, choices, onChange, baseVersion, curr
               </div>
               {c.after && <Snippet text={c.after} tone="context" />}
               <details className="text-xs text-muted-foreground">
-                <summary className="cursor-pointer select-none">Como era na v{baseVersion}</summary>
+                <summary className="cursor-pointer select-none">Como era na {baseSemver}</summary>
                 <div className="mt-1.5">
                   <Snippet text={c.base} tone="base" />
                 </div>

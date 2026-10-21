@@ -35,6 +35,7 @@ import { Hint } from "@/components/ui/tooltip";
 import { docsApi, keys, type HistoryEntry, type Page } from "@/lib/api";
 import { DiffView } from "@/components/admin/diff-view";
 import { collapseDiff, diffLines, diffStats } from "@/lib/diff";
+import { bumpSemver } from "@/lib/semver";
 import { cn, downloadText, formatBytes, formatDate, timeAgo } from "@/lib/utils";
 
 const CURRENT = "current";
@@ -43,6 +44,8 @@ interface Item {
   id: string;
   current: boolean;
   version: number | null;
+  /** versão x.y.z */
+  semver: string | null;
   note: string;
   author: string;
   at: string;
@@ -101,11 +104,11 @@ function dayLabel(iso: string): string {
 
 const timeOf = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 const versionLabel = (item: Item) =>
-  item.version
-    ? `v${item.version}`
+  item.semver
+    ? item.semver
     : new Date(item.at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 /** rótulo curto para o selo da linha do tempo */
-const versionBadge = (item: Item) => (item.version ? `v${item.version}` : "antiga");
+const versionBadge = (item: Item) => item.semver ?? "antiga";
 
 function pendingNotice(pending: NonNullable<VersionHistoryProps["pending"]>) {
   if (pending.kind === "unsaved") return "Você tem alterações não salvas no editor. Elas não aparecem aqui até serem salvas e aplicadas.";
@@ -131,11 +134,12 @@ function HistoryBody({ page, pending, initialId, onRestored, reviewOnly, onUseVe
 
   const items: Item[] = useMemo(
     () => [
-      { id: CURRENT, current: true, version: page.version, note: page.note, author: page.updated_by, at: page.updated_at },
+      { id: CURRENT, current: true, version: page.version, semver: page.semver, note: page.note, author: page.updated_by, at: page.updated_at },
       ...(entries ?? []).map((e, i, all) => ({
         id: e.id,
         current: false,
         version: e.version,
+        semver: e.semver,
         note: e.note,
         author: e.author,
         // versões antigas não guardavam quando foram escritas: uma versão é escrita no momento
@@ -178,7 +182,7 @@ function HistoryBody({ page, pending, initialId, onRestored, reviewOnly, onUseVe
       const restored = await docsApi.restoreVersion(page.id, selected.id);
       await onRestored(restored);
       await mutate();
-      toast.success(`Versão ${versionLabel(selected)} restaurada`, { description: `Criada a v${restored.version}` });
+      toast.success(`Versão ${versionLabel(selected)} restaurada`, { description: `Criada a versão ${restored.semver}` });
       setSelectedId(CURRENT);
       setConfirming(false);
     } catch (err) {
@@ -382,7 +386,7 @@ function HistoryBody({ page, pending, initialId, onRestored, reviewOnly, onUseVe
                 notice={diff!.first ? "Primeira versão registrada: todo o conteúdo aparece como adicionado." : undefined}
                 legend={
                   effectiveAgainst === "current"
-                    ? `${versionLabel(selected)} → atual (v${page.version})`
+                    ? `${versionLabel(selected)} → atual (${page.semver})`
                     : previous
                       ? `${versionLabel(previous)} → ${versionLabel(selected)}`
                       : `início → ${versionLabel(selected)}`
@@ -444,7 +448,7 @@ function HistoryBody({ page, pending, initialId, onRestored, reviewOnly, onUseVe
             <AlertDialogDescription>
               {reviewOnly
                 ? "O texto do editor passa a ser o dessa versão. A página publicada só muda quando você enviar para revisão e a proposta for aplicada."
-                : `O conteúdo dela vira uma nova versão (v${page.version + 1}). A versão atual continua no histórico.`}
+                : `O conteúdo dela vira uma nova versão (${bumpSemver(page.semver, "patch")}). A versão atual continua no histórico.`}
               {pending && pendingReplaced(pending)}
             </AlertDialogDescription>
           </AlertDialogHeader>

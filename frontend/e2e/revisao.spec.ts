@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { appendToEditor, changeViaReview, findPage, loginAs, unique } from "./fixtures";
+import { appendToEditor, approveAndApply, changeViaReview, findPage, loginAs, unique } from "./fixtures";
 
 const BASE = "# Guia\n\nIntrodução.\n\nPasso um.\n\nPasso dois.\n\nPasso três.\n\nConclusão.\n";
 
@@ -128,7 +128,7 @@ test("usar uma versão antiga no editor pede confirmação quando há algo pende
   const openOldVersion = async () => {
     await page.getByRole("button", { name: "Histórico de versões" }).click();
     await page.locator('[id^="version-"]').nth(1).click(); // a mais antiga
-    await page.getByRole("button", { name: /Usar v\d+ no editor/ }).click();
+    await page.getByRole("button", { name: /Usar \d+\.\d+\.\d+ no editor/ }).click();
   };
 
   // editor limpo: usa direto, sem perguntar
@@ -139,14 +139,64 @@ test("usar uma versão antiga no editor pede confirmação quando há algo pende
   // agora há uma alteração não salva (o texto antigo): usar de novo pergunta
   await openOldVersion();
   const confirm = page.getByRole("alertdialog");
-  await expect(confirm.getByText(/Usar a versão v\d+ no editor\?/)).toBeVisible();
+  await expect(confirm.getByText(/Usar a versão \d+\.\d+\.\d+ no editor\?/)).toBeVisible();
   await expect(confirm.getByText(/alterações não salvas no editor serão perdidas/)).toBeVisible();
   await confirm.getByRole("button", { name: "Cancelar" }).click();
   await expect(confirm).toBeHidden();
 
   // o histórico continua aberto: confirmar aplica a versão e fecha tudo
-  await page.getByRole("button", { name: /Usar v\d+ no editor/ }).click();
+  await page.getByRole("button", { name: /Usar \d+\.\d+\.\d+ no editor/ }).click();
   await confirm.getByRole("button", { name: "Substituir e usar" }).click();
   await expect(confirm).toBeHidden();
   await expect(page.getByText("Texto original.").first()).toBeVisible();
+});
+
+test("versões x.y.z: rascunho 0.1.0, primeira publicação 1.0.0 e uma novidade leva a 1.1.0", async ({ page }) => {
+  const title = `Versionada ${unique()}`;
+  const slug = title.toLowerCase().replace(/ /g, "-");
+  await loginAs(page, "admin");
+  const created = await (await page.request.post("/api/admin/pages", { data: { title, content: `# ${title}\n\nTexto.\n` } })).json();
+  expect(created.semver).toBe("0.1.0");
+
+  const readerFooter = async () => {
+    const reader = await page.context().browser()!.newContext({ baseURL: "http://localhost:5175" });
+    const readerPage = await reader.newPage();
+    await readerPage.goto(`/docs/${slug}`);
+    const text = await readerPage.getByText(/Atualizado em .*, versão /).textContent();
+    await reader.close();
+    return text ?? "";
+  };
+
+  // rascunho: a versão aparece no editor; pedir publicação mostra que a primeira publicação é a 1.0.0
+  await page.goto(`/admin/pages/${created.id}`);
+  await expect(page.getByRole("button", { name: "Histórico de versões" })).toContainText("0.1.0");
+  await page.getByRole("button", { name: "Pedir publicação", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/A primeira publicação da página é a versão/)).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: /Novidade/ })).toBeDisabled();
+  await dialog.getByLabel(/O que mudou e por quê/).fill("Primeira publicação.");
+  await dialog.getByRole("button", { name: "Enviar proposta" }).click();
+  await expect(dialog).toBeHidden();
+  await approveAndApply(page, `Atualiza ${title}`);
+  expect(await readerFooter()).toContain("versão 1.0.0");
+
+  // página publicada: escolher "Novidade" mostra a prévia 1.0.0 → 1.1.0
+  await page.goto(`/admin/pages/${created.id}`);
+  await appendToEditor(page, "\n\nConteúdo novo.");
+  await page.getByRole("button", { name: /^Salvar/ }).click();
+  await page.getByRole("button", { name: "Enviar para revisão" }).click();
+  await dialog.getByRole("radio", { name: /Novidade/ }).click();
+  await expect(dialog.getByText("1.1.0")).toBeVisible();
+  await dialog.getByLabel(/O que mudou e por quê/).fill("Acrescenta uma seção.");
+  await dialog.getByRole("button", { name: "Enviar proposta" }).click();
+  await expect(dialog).toBeHidden();
+
+  // a revisão mostra o tamanho da mudança e a próxima versão; ao aplicar vira 1.1.0
+  await page.goto("/admin/reviews");
+  await page.getByText(`Atualiza ${title}`).first().click();
+  await expect(page.getByText(/novidade:/)).toBeVisible();
+  await page.getByRole("button", { name: "Aprovar" }).click();
+  await page.getByRole("button", { name: "Aplicar na página" }).click();
+  await expect(page.getByText(/Aplicada como/).first()).toBeVisible();
+  expect(await readerFooter()).toContain("versão 1.1.0");
 });

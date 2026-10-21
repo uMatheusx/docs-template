@@ -199,7 +199,7 @@ export default function DocPage() {
               )}
             </div>
             <p className="mt-12 text-[13px] text-muted-foreground">
-              Atualizado em {formatDate(page.updated_at)}, versão {page.version}
+              Atualizado em {formatDate(page.updated_at)}, versão {page.semver}
             </p>
           </footer>
         </article>

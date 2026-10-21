@@ -125,6 +125,14 @@ Sem filtro, a referência inteira é exibida. O trecho acompanha a especificaç�
 - Badge de revisões abertas no rail e no painel. `REVIEW_SELF_APPROVAL=false` volta a exigir que outro admin aprove (padrão: `true`)
 - Mover e excluir páginas continuam sendo ações diretas de admin (a revisão cobre conteúdo, título, slug, ícone, descrição e publicação)
 
+**Versões x.y.z**
+- Cada página tem uma versão no formato `x.y.z`, como as versões do GitHub. Páginas novas nascem em `0.1.0` (rascunho); cada salvamento direto de rascunho sobe o último número; a **primeira publicação vira `1.0.0`**
+- Ao enviar uma mudança para revisão, o autor escolhe o tamanho: **Correção** (`x.y.Z`: texto, link, formatação), **Novidade** (`x.Y.0`: conteúdo novo sem quebrar o que existia) ou **Mudança grande** (`X.0.0`: reescrita ou mudança que quebra quem seguia a versão anterior). O formulário mostra a prévia (ex.: `1.0.0 → 1.1.0`)
+- A versão nova é calculada **quando a proposta é aplicada**, sobre a versão que a página tem naquele momento (se outra mudança entrou antes, a conta já considera)
+- Histórico, revisões, eventos e mensagens de mesclagem mostram `x.y.z`. Por baixo continua um número de revisão inteiro, que cuida de edições simultâneas e da mesclagem
+- Páginas e propostas anteriores a isso ganham a versão equivalente: a revisão `n` vira `1.0.(n-1)`
+- O histórico guarda os textos anteriores; uma mudança só de propriedades (ex.: a publicação) tem versão própria mas não aparece como entrada no histórico
+
 **Modelos de página**
 - Galeria ao criar página: em branco, guia passo a passo, runbook, ADR, notas de release, visão geral de serviço, FAQ, OpenAPI e AsyncAPI
 - “Salvar como modelo” a partir de qualquer página (guardado no S3); `{{title}}`, `{{date}}` e `{{author}}` são preenchidos na criação

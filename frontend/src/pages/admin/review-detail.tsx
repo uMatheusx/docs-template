@@ -38,6 +38,7 @@ import { useSession } from "@/hooks/use-session";
 import { ApiError, docsApi, keys, type MergeChoice, type ReviewDetail, type ReviewEvent } from "@/lib/api";
 import { collapseDiff, diffLines, diffStats } from "@/lib/diff";
 import { ACTIVE_STATUSES, describeFields, EVENT_VERB } from "@/lib/reviews";
+import { BUMP_LABEL } from "@/lib/semver";
 import { cn, formatDate, splitLeadingH1, timeAgo } from "@/lib/utils";
 import { ReviewStatusBadge } from "@/pages/admin/reviews";
 
@@ -202,13 +203,26 @@ export default function ReviewDetailPage() {
           <Link to={`/admin/pages/${review.page_id}`} className="font-semibold text-brand-ink hover:underline">
             {review.page_title}
           </Link>{" "}
-          a partir da versão {review.base_version} · aberta {timeAgo(review.created_at)}
+          a partir da versão {review.base_semver} · aberta {timeAgo(review.created_at)}
         </p>
         {review.description && <p className="relative mt-4 max-w-3xl whitespace-pre-wrap leading-relaxed">{review.description}</p>}
 
         <div className="relative mt-6 flex flex-wrap items-center gap-2 border-t pt-5">
           <span className="rounded-full bg-emerald-500/12 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">+{diff.stats.added}</span>
           <span className="rounded-full bg-red-500/12 px-2.5 py-1 text-xs font-bold text-red-700 dark:text-red-300">−{diff.stats.removed}</span>
+          {review.status === "merged" && review.merged_semver ? (
+            <span className="rounded-full border bg-background/70 px-2.5 py-1 text-xs font-semibold">
+              Aplicada como <span className="font-mono">{review.merged_semver}</span>
+            </span>
+          ) : (
+            active &&
+            review.next_semver && (
+              <span className="rounded-full border bg-background/70 px-2.5 py-1 text-xs font-semibold">
+                {BUMP_LABEL[review.bump]}: <span className="font-mono">{review.current_semver}</span> →{" "}
+                <span className="font-mono">{review.next_semver}</span>
+              </span>
+            )
+          )}
           {fields.map((f) => (
             <span key={f.label} className="rounded-full border bg-background/70 px-2.5 py-1 text-xs font-semibold">
               {f.label}: <span className="text-muted-foreground">{f.value}</span>
@@ -253,7 +267,7 @@ export default function ReviewDetailPage() {
         <div className="flex items-start gap-3 rounded-2xl border border-sky-500/40 bg-sky-500/10 p-4 text-sm">
           <GitMerge className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
           <p>
-            A página mudou desde que a proposta foi aberta (versão {review.base_version} → {review.current_version}), mas as mudanças não se
+            A página mudou desde que a proposta foi aberta (versão {review.base_semver} → {review.current_semver}), mas as mudanças não se
             sobrepõem: elas se combinam sozinhas. A aba Alterações mostra o resultado, com o que mudou na página e o que a proposta traz.
           </p>
         </div>
@@ -263,7 +277,7 @@ export default function ReviewDetailPage() {
           <div className="flex items-start gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
             <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <p>
-              A página mudou desde que a proposta foi aberta (versão {review.base_version} → {review.current_version}) e{" "}
+              A página mudou desde que a proposta foi aberta (versão {review.base_semver} → {review.current_semver}) e{" "}
               {conflictList.length === 1 ? "1 trecho foi mudado" : `${conflictList.length} trechos foram mudados`} dos dois lados. O restante
               se combina sozinho; escolha abaixo o que fica em cada conflito.
             </p>
@@ -272,8 +286,8 @@ export default function ReviewDetailPage() {
             <MergeConflicts
               conflicts={conflictList}
               choices={picked}
-              baseVersion={review.base_version}
-              currentVersion={review.current_version}
+              baseSemver={review.base_semver}
+              currentSemver={review.current_semver}
               onChange={(i, value) => {
                 const next = [...picked];
                 next[i] = value;
@@ -289,7 +303,7 @@ export default function ReviewDetailPage() {
         <div className="flex items-start gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <p>
-            A página mudou desde que a proposta foi aberta (versão {review.base_version} → {review.current_version}) e não foi possível
+            A página mudou desde que a proposta foi aberta (versão {review.base_semver} → {review.current_semver}) e não foi possível
             combinar as mudanças automaticamente. As alterações abaixo comparam com a versão atual; aplicar vai sobrescrever o que mudou nesse
             meio-tempo.
           </p>
@@ -353,8 +367,8 @@ export default function ReviewDetailPage() {
               empty={review.has_content ? "O conteúdo proposto é igual ao atual." : "Esta proposta só altera propriedades da página."}
               legend={
                 review.status === "merged"
-                  ? `Antes de aplicar → v${review.merged_version}`
-                  : `Versão ${review.current_version} → proposta`
+                  ? `Antes de aplicar → ${review.merged_semver}`
+                  : `Versão ${review.current_semver} → proposta`
               }
               notice={outdated ? (mergeInfo?.state === "clean" ? "combinada com a página" : "página mudou") : undefined}
             />

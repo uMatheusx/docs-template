@@ -42,6 +42,7 @@ import { MovePageDialog } from "@/components/admin/move-page-dialog";
 import { ReviewDialog, type ReviewDraft } from "@/components/admin/review-dialog";
 import { SaveTemplateDialog } from "@/components/admin/save-template-dialog";
 import { VersionHistory } from "@/components/admin/version-history";
+import { legacySemver } from "@/lib/semver";
 import { ApiReference } from "@/components/api/api-reference";
 import { Markdown } from "@/components/markdown/markdown";
 import {
@@ -103,6 +104,8 @@ interface LocalDraft {
   savedAt: string;
   /** versão da página em que o rascunho se baseia (a mesclagem compara com ela ao aplicar a proposta) */
   baseVersion: number;
+  /** versão x.y.z dessa base (rascunhos antigos não guardavam: vem da revisão) */
+  baseSemver?: string;
   /** campos da página nessa versão: permitem separar o que o usuário mudou do que mudou na página depois */
   baseDraft?: Draft;
   /** guardado de propósito, pelo botão Salvar: volta sozinho ao abrir a página */
@@ -207,10 +210,14 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const [draft, setDraft] = useState<Draft>(() => (restored ? rebaseLocal(restored, page) : toDraft(page)));
   const [recovered, setRecovered] = useState<LocalDraft | null>(restored ? null : stored);
   // versão (e campos) em que o rascunho se baseia: é com ela que a mesclagem compara ao aplicar a proposta
-  const [origin, setOrigin] = useState<{ version: number; fields: Draft }>(() =>
+  const [origin, setOrigin] = useState<{ version: number; semver: string; fields: Draft }>(() =>
     restored
-      ? { version: restored.baseVersion, fields: restored.baseDraft ?? toDraft(page) }
-      : { version: page.version, fields: toDraft(page) },
+      ? {
+          version: restored.baseVersion,
+          semver: restored.baseSemver ?? legacySemver(restored.baseVersion),
+          fields: restored.baseDraft ?? toDraft(page),
+        }
+      : { version: page.version, semver: page.semver, fields: toDraft(page) },
   );
   const [persisted, setPersisted] = useState<Persisted | null>(() =>
     restored ? { kind: "local", snapshot: rebaseLocal(restored, page) } : null,
@@ -271,7 +278,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
       id: "local-draft-restored",
       description:
         restored.baseVersion !== page.version
-          ? `Feito sobre a v${restored.baseVersion}; a página está na v${page.version}. As mudanças se combinam quando a proposta for aplicada.`
+          ? `Feito sobre a versão ${restored.baseSemver ?? legacySemver(restored.baseVersion)}; a página está na ${page.semver}. As mudanças se combinam quando a proposta for aplicada.`
           : "As alterações salvas neste navegador voltaram ao editor. Envie para revisão quando estiver pronto.",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- só ao abrir a página
@@ -288,6 +295,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
             draft,
             savedAt: new Date().toISOString(),
             baseVersion: origin.version,
+            baseSemver: origin.semver,
             baseDraft: origin.fields,
             explicit: persisted?.kind === "local" && !unsaved,
           };
@@ -316,7 +324,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     setBaseline(next);
     setDraft(toDraft(next));
     setPersisted(null);
-    setOrigin({ version: next.version, fields: toDraft(next) });
+    setOrigin({ version: next.version, semver: next.semver, fields: toDraft(next) });
   }
 
   /** Páginas publicadas: "Salvar" guarda neste navegador (para trocar de página sem perder nada) e não publica. */
@@ -327,6 +335,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         draft,
         savedAt: new Date().toISOString(),
         baseVersion: origin.version,
+        baseSemver: origin.semver,
         baseDraft: origin.fields,
         explicit: true,
       };
@@ -357,11 +366,11 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     try {
       const saved = await docsApi.updatePage(baseline.id, input);
       setPersisted(null);
-      setOrigin({ version: saved.version, fields: toDraft(saved) });
+      setOrigin({ version: saved.version, semver: saved.semver, fields: toDraft(saved) });
       setBaseline(saved);
       setDraft((d) => ({ ...d, slug: saved.slug }));
       await refreshCaches(saved);
-      toast.success(`Versão ${saved.version} salva`, { description: saved.note || "Guardada no S3 · veja em Histórico" });
+      toast.success(`Versão ${saved.semver} salva`, { description: saved.note || "Guardada no S3 · veja em Histórico" });
       return true;
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -390,7 +399,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     setReviewOpen(true);
   }
 
-  async function submitReview({ title, description, requestPublish }: ReviewDraft) {
+  async function submitReview({ title, description, requestPublish, bump }: ReviewDraft) {
     if (unsaved) {
       toast.error("Salve antes de enviar para revisão");
       return false;
@@ -405,7 +414,15 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     }
     setSaving(true);
     try {
-      const review = await docsApi.submitReview(baseline.id, { title, description, content, fields, base_version: origin.version });
+      const review = await docsApi.submitReview(baseline.id, {
+        title,
+        description,
+        content,
+        fields,
+        base_version: origin.version,
+        base_semver: origin.semver,
+        bump,
+      });
       // a proposta guarda as alterações: o editor volta para a versão publicada
       try {
         localStorage.removeItem(localKey(baseline.id));
@@ -451,7 +468,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
       };
       setDraft(next);
       setPersisted({ kind: "proposal", number: review.number, snapshot: next });
-      setOrigin({ version: detail.base_version, fields: toDraft(baseline) });
+      setOrigin({ version: detail.base_version, semver: detail.base_semver, fields: toDraft(baseline) });
       toast.success(`Proposta #${review.number} carregada no editor`, { description: "Envie de novo para atualizar a proposta." });
     } catch (err) {
       toast.error("Não foi possível carregar a proposta", { description: (err as Error).message });
@@ -600,7 +617,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
             saving={saving}
             dirty={unsaved}
             changed={persisted ? beyondPersisted.length : changed.length}
-            version={baseline.version}
+            version={baseline.semver}
             persisted={persisted ? { kind: persisted.kind, number: persisted.number } : undefined}
           />
 
@@ -635,7 +652,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
             <Hint label="Histórico de versões">
               <Button variant="ghost" size="sm" onClick={() => openHistory()} aria-label="Histórico de versões">
                 <History /> <span className="hidden 2xl:inline">Histórico</span>
-                <span className="rounded-md bg-muted px-1.5 font-mono text-[10px]">v{baseline.version}</span>
+                <span className="rounded-md bg-muted px-1.5 font-mono text-[10px]">{baseline.semver}</span>
               </Button>
             </Hint>
             <Hint label={wide && inspectorOpen ? "Fechar inspetor" : "Abrir inspetor"}>
@@ -732,14 +749,18 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
               <LifeBuoy className="h-4 w-4 text-brand-ink" />
               <span className="font-semibold">Encontramos alterações não salvas de {timeAgo(recovered.savedAt)}.</span>
               {recovered.baseVersion !== baseline.version && (
-                <span className="text-xs text-muted-foreground">(feitas sobre a v{recovered.baseVersion}; a atual é v{baseline.version})</span>
+                <span className="text-xs text-muted-foreground">(feitas sobre a versão {recovered.baseSemver ?? legacySemver(recovered.baseVersion)}; a atual é {baseline.semver})</span>
               )}
               <span className="ml-auto flex gap-2">
                 <Button
                   size="sm"
                   onClick={() => {
                     setDraft(rebaseLocal(recovered, baseline));
-                    setOrigin({ version: recovered.baseVersion, fields: recovered.baseDraft ?? toDraft(baseline) });
+                    setOrigin({
+                      version: recovered.baseVersion,
+                      semver: recovered.baseSemver ?? legacySemver(recovered.baseVersion),
+                      fields: recovered.baseDraft ?? toDraft(baseline),
+                    });
                     setRecovered(null);
                   }}
                 >
@@ -961,6 +982,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         changed={changed}
         existing={myReview}
         canRequestPublish={!baseline.published}
+        currentSemver={baseline.semver}
         saving={saving}
         onSubmit={submitReview}
       />
@@ -1023,7 +1045,7 @@ function SaveState({
   saving: boolean;
   dirty: boolean;
   changed: number;
-  version: number;
+  version: string;
   /** o que já está guardado fora do editor: uma proposta carregada ou um "Salvar" local */
   persisted?: { kind: "proposal" | "local"; number?: number };
 }) {
@@ -1062,7 +1084,7 @@ function SaveState({
               ? "Salvo neste navegador · não enviado"
               : state === "proposal"
                 ? `Proposta #${proposal} carregada`
-                : `Salvo · v${version}`}
+                : `Salvo · ${version}`}
       </motion.span>
     </AnimatePresence>
   );

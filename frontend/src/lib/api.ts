@@ -3,6 +3,7 @@ export interface Crumb {
   title: string;
   path: string;
 }
+import type { Bump } from "@/lib/semver";
 
 /** Tipo da página: markdown ou especificação de API (renderizada como referência interativa). */
 export type PageKind = "doc" | "openapi" | "asyncapi";
@@ -19,7 +20,10 @@ export interface PageMeta {
   created_at: string;
   updated_at: string;
   updated_by: string;
+  /** revisão interna (controle de edições simultâneas) */
   version: number;
+  /** versão x.y.z exibida às pessoas */
+  semver: string;
   /** descrição da alteração que gerou esta versão */
   note: string;
   kind: PageKind;
@@ -63,6 +67,7 @@ export interface HistoryEntry {
   author: string;
   size: number;
   version: number | null;
+  semver: string | null;
   note: string;
   /** quando esta versão foi escrita */
   created_at: string;
@@ -150,6 +155,8 @@ export interface Review {
   title: string;
   description: string;
   base_version: number;
+  base_semver: string;
+  bump: Bump;
   fields: ReviewFields;
   has_content: boolean;
   status: ReviewStatus;
@@ -157,6 +164,7 @@ export interface Review {
   created_at: string;
   updated_at: string;
   merged_version: number | null;
+  merged_semver: string | null;
   events: ReviewEvent[];
 }
 
@@ -176,6 +184,8 @@ export interface MergeInfo {
   state: "current" | "clean" | "conflicts" | "unavailable";
   base_version: number;
   current_version: number;
+  base_semver: string;
+  current_semver: string;
   conflicts: MergeConflict[];
   merged_content: string | null;
 }
@@ -184,6 +194,9 @@ export interface ReviewDetail extends Review {
   proposed_content: string;
   current_content: string;
   current_version: number;
+  current_semver: string;
+  /** versão que a página terá se a proposta for aplicada agora */
+  next_semver: string;
   page_kind: PageKind;
   merge: MergeInfo | null;
 }
@@ -194,6 +207,8 @@ export interface ReviewInput {
   content?: string;
   fields?: ReviewFields;
   base_version: number;
+  base_semver?: string;
+  bump?: Bump;
 }
 
 // ---------------------------------------------------------------- modelos

@@ -198,7 +198,7 @@ export function Inspector({ draft, baseline, onChange, onJump, onOpenHistory, ki
             </div>
             <dl className="divide-y rounded-2xl border text-xs">
               {[
-                ["Versão", `v${baseline.version}`],
+                ["Versão", baseline.semver],
                 ["Criada", formatDate(baseline.created_at)],
                 ["Atualizada", `${timeAgo(baseline.updated_at)} · ${baseline.updated_by || "—"}`],
                 ["ID", baseline.id],
@@ -267,10 +267,11 @@ export function Inspector({ draft, baseline, onChange, onJump, onOpenHistory, ki
             {isLoading && <Loader2 className="mx-auto my-6 h-5 w-5 animate-spin text-brand" />}
             <ol className="relative space-y-0.5 before:absolute before:bottom-4 before:left-[15px] before:top-4 before:w-px before:bg-border">
               <li className="relative flex items-start gap-3 rounded-xl px-1 py-2">
-                <span className="z-10 flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full brand-tile text-[10px] font-semibold ring-4 ring-sidebar">
-                  v{baseline.version}
+                <span className="z-10 flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full brand-tile ring-4 ring-sidebar">
+                  <span className="h-2 w-2 rounded-full bg-current" />
                 </span>
                 <span className="min-w-0 text-xs">
+                  <span className="block truncate font-mono text-[11px] font-semibold">{baseline.semver} · atual</span>
                   <span className="block truncate font-bold">{baseline.note || "Versão atual"}</span>
                   <span className="text-muted-foreground">
                     {baseline.updated_by || "—"} · {timeAgo(baseline.updated_at)}
@@ -291,9 +292,10 @@ export function Inspector({ draft, baseline, onChange, onJump, onOpenHistory, ki
                     title={formatDate(at)}
                   >
                     <span className="z-10 flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full border bg-background text-[10px] font-bold text-muted-foreground ring-4 ring-sidebar transition-colors group-hover:border-brand group-hover:text-brand-ink">
-                      {entry.version ? `v${entry.version}` : "·"}
+                      <span className="h-2 w-2 rounded-full bg-current" />
                     </span>
                     <span className="min-w-0 flex-1 text-xs">
+                      <span className="block truncate font-mono text-[11px] font-semibold">{entry.semver ?? "antiga"}</span>
                       <span className={cn("block truncate", entry.note ? "font-semibold" : "italic text-muted-foreground")}>
                         {entry.note || "Sem descrição"}
                       </span>
