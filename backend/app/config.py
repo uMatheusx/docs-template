@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     site_name: str = "Account Hub Docs"
+    # descrição usada na prévia de links da home e de páginas sem descrição
+    site_description: str = "Documentação do Account Hub"
+    # endereço público (ex.: https://docs.exemplo.com); vazio = o endereço da requisição
+    public_url: str = ""
     # "production" recusa subir com credenciais padrão ou fracas; "development" só avisa
     app_env: Literal["development", "production"] = "development"
 

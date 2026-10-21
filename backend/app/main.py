@@ -2,16 +2,17 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .routers import admin, auth, public
 from .seed import seed_if_empty
+from .seo import page_meta, render_index
 from .service import DocsService
 from .storage import Storage
 
@@ -60,10 +61,30 @@ if (dist / "index.html").exists():
     app.mount("/assets", StaticFiles(directory=dist / "assets"), name="static")
 
     @app.get("/{full_path:path}", include_in_schema=False)
-    async def spa(full_path: str):
+    async def spa(full_path: str, request: Request):
         if full_path.startswith("api/"):
             raise HTTPException(404, "Rota não encontrada")
         candidate = (dist / full_path).resolve()
         if full_path and candidate.is_file() and dist in candidate.parents:
             return FileResponse(candidate)
-        return FileResponse(dist / "index.html", headers={"Cache-Control": "no-cache"})
+        html = (dist / "index.html").read_text(encoding="utf-8")
+        base = settings.public_url.rstrip("/")
+        url = f"{base}/{full_path}" if base else str(request.url.replace(query="", fragment=""))
+        meta = await run_in_threadpool(_share_meta, full_path, url)
+        body = render_index(html, meta, site_name=settings.site_name)
+        return HTMLResponse(body, headers={"Cache-Control": "no-cache"})
+
+
+def _share_meta(full_path: str, url: str) -> dict[str, str]:
+    """Título e descrição para a prévia de links. Só páginas publicadas, e só se a leitura é pública."""
+    title, description = None, settings.site_description
+    path = full_path.strip("/")
+    if settings.public_read and (path == "docs" or path.startswith("docs/")):
+        page_path = path[len("docs") :].strip("/")
+        if page_path:
+            try:
+                page = DocsService(app.state.storage).get_page_meta(page_path)
+                title, description = page["title"], page.get("description") or settings.site_description
+            except HTTPException:
+                pass  # página inexistente ou rascunho: prévia genérica
+    return page_meta(site_name=settings.site_name, title=title, description=description, url=url)

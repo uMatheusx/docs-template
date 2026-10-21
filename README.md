@@ -121,6 +121,10 @@ Sem filtro, a referência inteira é exibida. O trecho acompanha a especificaç�
 - Ao renomear o slug ou mover uma página, o endereço antigo (dela e de todas as subpáginas) passa a levar ao novo, mantendo a âncora `#seção`
 - O redirecionamento aponta para a página, não para um endereço: mudanças seguidas não criam cadeias, e uma página excluída volta a dar 404. Consulta: `GET /api/redirects?path=...`
 
+**Prévia ao compartilhar links**
+- O HTML de `/docs/<caminho>` sai do servidor com título, descrição e tags Open Graph/Twitter da página, lidos por WhatsApp, Slack, Teams e LinkedIn (que não executam JavaScript)
+- Rascunhos nunca aparecem, e com `PUBLIC_READ=false` a prévia é sempre genérica. Atrás de proxy, defina `PUBLIC_URL` para o `og:url` usar o endereço público
+
 **Links e imagens quebrados**
 - O checklist de qualidade verifica links internos (`/docs/...`) para páginas inexistentes ou em rascunho e imagens/arquivos (`/api/assets/...`) apagados do S3, com página e linha de cada ocorrência — e entram no score de saúde
 

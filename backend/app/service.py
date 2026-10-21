@@ -49,6 +49,10 @@ class DocsService:
         page["content"] = self.storage.get_content(page["id"])
         return page
 
+    def get_page_meta(self, path: str) -> dict:
+        """Metadados de uma página publicada, sem ler o conteúdo no S3."""
+        return self._find(path=path.strip("/"), include_drafts=False)
+
     def resolve_redirect(self, path: str, *, include_drafts: bool) -> str:
         """Endereço atual de uma página que já esteve em `path` (renomeada ou movida)."""
         page_id = self.storage.get_redirect(path.strip("/"))
