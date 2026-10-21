@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Hint } from "@/components/ui/tooltip";
-import { api, docsApi, keys, type Page, type Review, type TreeNode } from "@/lib/api";
+import { api, docsApi, keys, type BatchItemInput, type Page, type Review, type TreeNode } from "@/lib/api";
 import { changedFields, rebaseLocal, reviewPayload, toDraft } from "@/lib/draft";
 import { clearLocal, readLocal, useLocalDrafts, type LocalDraft } from "@/lib/local-drafts";
 import { BUMP_OPTIONS, bumpSemver, type Bump } from "@/lib/semver";
@@ -199,6 +199,7 @@ export default function ChangesPage() {
   const [bumps, setBumps] = useState<Record<string, Bump>>({});
   const [done, setDone] = useState<Record<string, boolean>>({});
   const [description, setDescription] = useState("");
+  const [title, setTitle] = useState("");
   const [query, setQuery] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -241,32 +242,49 @@ export default function ChangesPage() {
 
   async function send() {
     setSending(true);
-    let sent = 0;
-    for (const item of chosen) {
-      try {
+    try {
+      // monta o que vai de cada página; falhar numa delas não deve deixar o pacote pela metade
+      const built: { item: Item; input: BatchItemInput }[] = [];
+      for (const item of chosen) {
         const page = await api<Page>(keys.adminPage(item.id));
-        const title = `Atualiza ${page.title}`;
+        const base = { title: `Atualiza ${page.title}`, description };
         const payload =
           item.kind === "publish"
-            ? { title, description, fields: { published: true }, base_version: page.version, base_semver: page.semver, bump: "patch" as Bump }
+            ? { ...base, fields: { published: true }, base_version: page.version, base_semver: page.semver, bump: "patch" as Bump }
             : item.local?.explicit
-              ? reviewPayload(page, item.local, { title, description, bump: bumpOf(item.id) })
+              ? reviewPayload(page, item.local, { ...base, bump: bumpOf(item.id) })
               : null;
         if (!payload) continue;
-        await docsApi.submitReview(item.id, payload);
+        const { title: _t, description: _d, ...input } = payload;
+        built.push({ item, input: { page_id: item.id, ...input } });
+      }
+      if (built.length === 0) return;
+
+      if (built.length === 1) {
+        // uma página só: proposta comum
+        const { item, input } = built[0];
+        const { page_id: _id, ...rest } = input;
+        await docsApi.submitReview(item.id, { title: `Atualiza ${item.page.title}`, description, ...rest });
+      } else {
+        // várias: um pacote, revisado e aplicado junto (como um pull request)
+        await docsApi.submitBatch({
+          title: title.trim() || `Atualiza ${built.length} páginas`,
+          description,
+          items: built.map((b) => b.input),
+        });
+      }
+      for (const { item } of built) {
         clearLocal(item.id);
         setDone((d) => ({ ...d, [item.id]: true }));
-        sent++;
-      } catch (err) {
-        toast.error(`Não foi possível enviar “${item.page.title}”`, { description: (err as Error).message });
       }
-    }
-    setSending(false);
-    if (sent > 0) {
       mutate(keys.stats);
       mutate(keys.adminTree);
-      mutate((key) => typeof key === "string" && key.startsWith("/api/admin/reviews"));
-      toast.success(`${sent} ${sent === 1 ? "proposta enviada" : "propostas enviadas"} para revisão`);
+      mutate((key) => typeof key === "string" && (key.startsWith("/api/admin/reviews") || key.startsWith("/api/admin/review-batches")));
+      toast.success(built.length === 1 ? "Proposta enviada para revisão" : `Pacote com ${built.length} páginas enviado para revisão`);
+    } catch (err) {
+      toast.error("Não foi possível enviar para revisão", { description: (err as Error).message });
+    } finally {
+      setSending(false);
     }
   }
 
@@ -369,7 +387,21 @@ export default function ChangesPage() {
 
           {/* barra de envio: acompanha a rolagem, então funciona igual com 1 ou com 100 páginas */}
           <div className="sticky bottom-4 z-10 flex flex-wrap items-end gap-3 rounded-2xl border bg-card/95 p-3 shadow-lg backdrop-blur">
-            <div className="min-w-0 flex-1 basis-64 space-y-1">
+            <div className="min-w-0 flex-1 basis-64 space-y-2">
+              {chosen.length > 1 && (
+                <div className="space-y-1">
+                  <label htmlFor="batch-title" className="text-xs font-semibold text-muted-foreground">
+                    Título do pacote <span className="font-normal">({chosen.length} páginas revisadas juntas)</span>
+                  </label>
+                  <Input
+                    id="batch-title"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    maxLength={200}
+                    placeholder={`Atualiza ${chosen.length} páginas`}
+                  />
+                </div>
+              )}
               <label htmlFor="batch-description" className="text-xs font-semibold text-muted-foreground">
                 O que mudou e por quê <span className="font-normal">(obrigatório, vale para todas)</span>
               </label>

@@ -223,6 +223,8 @@ class Review(BaseModel):
     updated_at: str
     merged_version: int | None = None
     merged_semver: str | None = None
+    # proposta que faz parte de um pacote (várias páginas revisadas juntas)
+    batch_id: str | None = None
     events: list[ReviewEvent] = []
 
 
@@ -285,6 +287,59 @@ class ReviewMerge(BaseModel):
     resolutions: list[Literal["ours", "theirs", "both"]] | None = None
     # versão escolhida por quem aplica, no lugar da sugerida (precisa ser maior que a atual)
     semver: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$")
+
+
+class BatchItem(BaseModel):
+    """Uma página dentro de um pacote: o que muda nela, sem título nem descrição (valem os do pacote)."""
+
+    page_id: str
+    content: str | None = None
+    fields: ReviewFields = ReviewFields()
+    base_version: int
+    base_semver: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$")
+    bump: Literal["patch", "minor", "major"] = "patch"
+
+
+class BatchInput(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=2000)
+    items: list[BatchItem] = Field(min_length=1, max_length=100)
+
+    @field_validator("title", "description")
+    @classmethod
+    def _not_blank(cls, value: str, info: ValidationInfo) -> str:
+        value = value.strip()
+        if not value:
+            message = "Descreva o que mudou e por quê." if info.field_name == "description" else "Informe um título."
+            raise ValueError(message)
+        return value
+
+
+class BatchPage(BaseModel):
+    review_id: str
+    page_id: str
+    page_title: str = ""
+    page_path: str = ""
+    status: ReviewStatus
+
+
+class Batch(BaseModel):
+    """Várias propostas, de páginas diferentes, revisadas e aplicadas juntas (como um pull request)."""
+
+    id: str
+    number: int
+    title: str
+    description: str = ""
+    author: str
+    status: ReviewStatus
+    created_at: str
+    updated_at: str
+    pages: list[BatchPage]
+    events: list[ReviewEvent] = []
+
+
+class BatchDetail(Batch):
+    reviews: list[ReviewDetail]
 
 
 # ---------------------------------------------------------------- modelos de página

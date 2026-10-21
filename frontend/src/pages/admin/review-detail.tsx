@@ -50,7 +50,7 @@ const EVENT_TONE: Partial<Record<ReviewEvent["type"], { icon: typeof Check; clas
   updated: { icon: PenLine, className: "bg-sky-500 text-white" },
 };
 
-function Timeline({ events }: { events: ReviewEvent[] }) {
+export function Timeline({ events }: { events: ReviewEvent[] }) {
   return (
     <ol className="relative space-y-4 before:absolute before:bottom-2 before:left-[15px] before:top-2 before:w-px before:bg-border">
       {events.map((e) => {

@@ -155,8 +155,17 @@ class ReviewService:
         }
 
     # ------------------------------------------------------------------ escrita
-    def submit(self, page_id: str, data: ReviewInput, user: User) -> dict:
-        """Cria uma proposta — ou atualiza a proposta ativa do mesmo autor para a mesma página."""
+    def submit(
+        self,
+        page_id: str,
+        data: ReviewInput,
+        user: User,
+        *,
+        number: int | None = None,
+        batch_id: str | None = None,
+    ) -> dict:
+        """Cria uma proposta — ou atualiza a proposta ativa do mesmo autor para a mesma página.
+        Num pacote, a proposta leva o número e o `batch_id` do pacote."""
         page = self.storage.get_page(page_id)
         if not page:
             raise not_found()
@@ -189,11 +198,14 @@ class ReviewService:
                 semver=data.semver,
                 status="open",
             )
+            if batch_id:
+                review.update(number=number, batch_id=batch_id)
             event = _event("updated", user.username, "Atualizou a proposta.")
         else:
             review = {
                 "id": f"rev_{uuid.uuid4().hex[:12]}",
-                "number": self.storage.next_number("reviews"),
+                "number": number or self.storage.next_number("reviews"),
+                "batch_id": batch_id,
                 "page_id": page_id,
                 "title": data.title.strip(),
                 "description": data.description.strip(),

@@ -51,6 +51,7 @@ const router = createBrowserRouter([
       { path: "changes", lazy: lazyPage(() => import("@/pages/admin/changes")) },
       { path: "reviews", lazy: lazyPage(() => import("@/pages/admin/reviews")) },
       { path: "reviews/:id", lazy: lazyPage(() => import("@/pages/admin/review-detail")) },
+      { path: "reviews/lote/:id", lazy: lazyPage(() => import("@/pages/admin/batch-detail")) },
     ],
   },
   { path: "*", element: <NotFound /> },

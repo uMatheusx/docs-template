@@ -298,6 +298,28 @@ class Storage:
             kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
         return [_clean(i) for i in items]
 
+    def put_batch(self, item: dict) -> None:
+        self.table.put_item(Item={**item, "record": "batch"})
+
+    def get_batch(self, batch_id: str) -> dict | None:
+        item = self.table.get_item(Key={"id": batch_id}).get("Item")
+        return _clean(item) if item and item.get("record") == "batch" else None
+
+    def list_batches(self) -> list[dict]:
+        kwargs: dict[str, Any] = {
+            "FilterExpression": "#rec = :batch",
+            "ExpressionAttributeNames": {"#rec": "record"},
+            "ExpressionAttributeValues": {":batch": "batch"},
+        }
+        items: list[dict] = []
+        while True:
+            resp = self.table.scan(**kwargs)
+            items.extend(resp.get("Items", []))
+            if "LastEvaluatedKey" not in resp:
+                break
+            kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+        return [_clean(i) for i in items]
+
     def delete_reviews_for_page(self, page_id: str) -> None:
         for review in self.list_reviews(page_id):
             self.table.delete_item(Key={"id": review["id"]})

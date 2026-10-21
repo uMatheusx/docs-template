@@ -6,13 +6,17 @@ Editores acessam o Studio; operações que alteram o que está publicado exigem 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from ..auth import require_admin, require_editor
+from ..batches import BatchService
 from ..config import Settings, get_settings
-from ..deps import get_reviews, get_service, get_storage, get_templates
+from ..deps import get_batches, get_reviews, get_service, get_storage, get_templates
 from ..library import TemplateService
 from ..links import link_report
 from ..reviews import ReviewService
 from ..schemas import (
     Asset,
+    Batch,
+    BatchDetail,
+    BatchInput,
     HistoryContent,
     HistoryEntry,
     ImportUrlRequest,
@@ -250,3 +254,61 @@ async def upload_asset(
 )
 def delete_asset(asset_id: str, filename: str, storage: Storage = Depends(get_storage)):
     storage.delete_asset(asset_id, filename)
+
+
+# ---------------------------------------------------------------- pacotes de revisão (várias páginas juntas)
+@router.get("/review-batches", response_model=list[Batch])
+def list_batches(
+    state: str = Query(default="active", pattern="^(active|done|all)$"), batches: BatchService = Depends(get_batches)
+):
+    return batches.list(state)
+
+
+@router.post("/review-batches", response_model=Batch, status_code=status.HTTP_201_CREATED)
+def create_batch(body: BatchInput, user: User = Depends(require_editor), batches: BatchService = Depends(get_batches)):
+    return batches.create(body, user)
+
+
+@router.get("/review-batches/{batch_id}", response_model=BatchDetail)
+def batch_detail(batch_id: str, batches: BatchService = Depends(get_batches)):
+    return batches.detail(batch_id)
+
+
+@router.post("/review-batches/{batch_id}/comments", response_model=Batch)
+def comment_batch(
+    batch_id: str,
+    body: ReviewComment,
+    user: User = Depends(require_editor),
+    batches: BatchService = Depends(get_batches),
+):
+    return batches.comment(batch_id, body.body, user)
+
+
+@router.post("/review-batches/{batch_id}/approve", response_model=Batch)
+def approve_batch(
+    batch_id: str,
+    body: ReviewDecision,
+    user: User = Depends(require_admin),
+    batches: BatchService = Depends(get_batches),
+):
+    return batches.approve(batch_id, body.body, user)
+
+
+@router.post("/review-batches/{batch_id}/request-changes", response_model=Batch)
+def request_batch_changes(
+    batch_id: str,
+    body: ReviewDecision,
+    user: User = Depends(require_admin),
+    batches: BatchService = Depends(get_batches),
+):
+    return batches.request_changes(batch_id, body.body, user)
+
+
+@router.post("/review-batches/{batch_id}/merge", response_model=Batch)
+def merge_batch(batch_id: str, user: User = Depends(require_admin), batches: BatchService = Depends(get_batches)):
+    return batches.merge(batch_id, user)
+
+
+@router.post("/review-batches/{batch_id}/close", response_model=Batch)
+def close_batch(batch_id: str, user: User = Depends(require_editor), batches: BatchService = Depends(get_batches)):
+    return batches.close(batch_id, user)

@@ -167,6 +167,8 @@ export interface Review {
   updated_at: string;
   merged_version: number | null;
   merged_semver: string | null;
+  /** proposta que faz parte de um pacote (várias páginas revisadas juntas) */
+  batch_id: string | null;
   events: ReviewEvent[];
 }
 
@@ -192,6 +194,43 @@ export interface MergeInfo {
   merged_content: string | null;
 }
 
+export interface BatchPage {
+  review_id: string;
+  page_id: string;
+  page_title: string;
+  page_path: string;
+  status: ReviewStatus;
+}
+
+/** Várias propostas, de páginas diferentes, revisadas e aplicadas juntas (como um pull request). */
+export interface Batch {
+  id: string;
+  number: number;
+  title: string;
+  description: string;
+  author: string;
+  status: ReviewStatus;
+  created_at: string;
+  updated_at: string;
+  pages: BatchPage[];
+  events: ReviewEvent[];
+}
+
+export interface BatchItemInput {
+  page_id: string;
+  content?: string;
+  fields?: ReviewFields;
+  base_version: number;
+  base_semver?: string;
+  bump?: Bump;
+}
+
+export interface BatchInput {
+  title: string;
+  description: string;
+  items: BatchItemInput[];
+}
+
 export interface ReviewDetail extends Review {
   proposed_content: string;
   current_content: string;
@@ -205,6 +244,10 @@ export interface ReviewDetail extends Review {
   semver_outdated: boolean;
   page_kind: PageKind;
   merge: MergeInfo | null;
+}
+
+export interface BatchDetail extends Batch {
+  reviews: ReviewDetail[];
 }
 
 export interface ReviewInput {
@@ -278,6 +321,8 @@ export const keys = {
   reviews: (state: "active" | "done" | "all" = "active", pageId?: string) =>
     `/api/admin/reviews?state=${state}${pageId ? `&page_id=${pageId}` : ""}`,
   review: (id: string) => `/api/admin/reviews/${id}`,
+  batches: (state: "active" | "done" | "all" = "active") => `/api/admin/review-batches?state=${state}`,
+  batch: (id: string) => `/api/admin/review-batches/${id}`,
   pageByPath: (path: string) => `/api/pages/by-path?path=${encodeURIComponent(path)}`,
   redirect: (path: string) => `/api/redirects?path=${encodeURIComponent(path)}`,
   adminPage: (id: string) => `/api/admin/pages/${id}`,
@@ -327,6 +372,17 @@ export const docsApi = {
       json: { force: options.force ?? false, resolutions: options.resolutions, semver: options.semver },
     }),
   closeReview: (id: string) => api<Review>(`/api/admin/reviews/${id}/close`, { method: "POST" }),
+
+  // pacotes (várias páginas na mesma revisão)
+  submitBatch: (input: BatchInput) => api<Batch>("/api/admin/review-batches", { method: "POST", json: input }),
+  commentBatch: (id: string, body: string) =>
+    api<Batch>(`/api/admin/review-batches/${id}/comments`, { method: "POST", json: { body } }),
+  approveBatch: (id: string, body = "") =>
+    api<Batch>(`/api/admin/review-batches/${id}/approve`, { method: "POST", json: { body } }),
+  requestBatchChanges: (id: string, body: string) =>
+    api<Batch>(`/api/admin/review-batches/${id}/request-changes`, { method: "POST", json: { body } }),
+  mergeBatch: (id: string) => api<Batch>(`/api/admin/review-batches/${id}/merge`, { method: "POST" }),
+  closeBatch: (id: string) => api<Batch>(`/api/admin/review-batches/${id}/close`, { method: "POST" }),
 
   // modelos
   createTemplate: (input: Omit<Template, "id" | "created_by" | "created_at">) =>

@@ -1,5 +1,6 @@
 from fastapi import Depends, Request
 
+from .batches import BatchService
 from .config import Settings, get_settings
 from .library import TemplateService
 from .reviews import ReviewService
@@ -21,3 +22,7 @@ def get_reviews(request: Request, settings: Settings = Depends(get_settings)) ->
 
 def get_templates(request: Request) -> TemplateService:
     return TemplateService(request.app.state.storage)
+
+
+def get_batches(request: Request, settings: Settings = Depends(get_settings)) -> BatchService:
+    return BatchService(ReviewService(DocsService(request.app.state.storage), settings))

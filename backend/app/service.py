@@ -118,8 +118,13 @@ class DocsService:
             "published": published,
             "drafts": len(pages) - published,
             "assets": sum(1 for _ in self.storage.list_assets()),
-            "open_reviews": sum(
-                1 for r in self.storage.list_reviews() if r["status"] in ("open", "approved", "changes_requested")
+            # as propostas de um pacote contam como uma só
+            "open_reviews": len(
+                {
+                    r.get("batch_id") or r["id"]
+                    for r in self.storage.list_reviews()
+                    if r["status"] in ("open", "approved", "changes_requested")
+                }
             ),
             "recent": [{**p, "path": paths.get(p["id"], p["slug"])} for p in recent],
         }
