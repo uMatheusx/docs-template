@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { appendToEditor, approveAndApply, changeViaReview, findPage, loginAs, unique } from "./fixtures";
+import { appendToEditor, approveAndApply, changeViaReview, findPage, loginAs, sendFromChanges, unique } from "./fixtures";
 
 const BASE = "# Guia\n\nIntrodução.\n\nPasso um.\n\nPasso dois.\n\nPasso três.\n\nConclusão.\n";
 
@@ -46,10 +46,7 @@ test("Salvar guarda neste navegador: dá para trocar de página e voltar, e só 
   await expect(page.getByText("Salvo neste navegador · não enviado")).toBeVisible();
 
   // enviar para revisão limpa o rascunho local
-  await page.getByRole("button", { name: "Enviar para revisão" }).click();
-  await page.getByLabel(/O que mudou e por quê/).fill("Acrescenta um texto ao guia.");
-  await page.getByRole("button", { name: "Enviar proposta" }).click();
-  await expect(page.getByRole("dialog")).toBeHidden();
+  await sendFromChanges(page, "Acrescenta um texto ao guia.");
   await page.goto(`/admin/pages/${guia.id}`);
 
   // limpa: fecha a proposta para não interferir nos outros testes
@@ -183,11 +180,11 @@ test("versões x.y.z: rascunho 0.1.0, primeira publicação 1.0.0 e uma novidade
   await appendToEditor(page, "\n\nConteúdo novo.");
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await page.getByRole("button", { name: "Enviar para revisão" }).click();
-  await dialog.getByRole("radio", { name: /Novidade/ }).click();
-  await expect(dialog.getByText("1.1.0")).toBeVisible();
-  await dialog.getByLabel(/O que mudou e por quê/).fill("Acrescenta uma seção.");
-  await dialog.getByRole("button", { name: "Enviar proposta" }).click();
-  await expect(dialog).toBeHidden();
+  await page.getByLabel(/Tamanho da mudança/).selectOption({ label: "Novidade" });
+  await expect(page.getByTestId("change-row")).toContainText("1.1.0");
+  await page.getByLabel(/O que mudou e por quê/).fill("Acrescenta uma seção.");
+  await page.getByRole("button", { name: /Enviar para revisão \(1\)/ }).click();
+  await expect(page.getByTestId("change-row")).toContainText("Enviada para revisão");
 
   // a revisão mostra o tamanho da mudança e a próxima versão; ao aplicar vira 1.1.0
   await page.goto("/admin/reviews");
@@ -197,60 +194,6 @@ test("versões x.y.z: rascunho 0.1.0, primeira publicação 1.0.0 e uma novidade
   await page.getByRole("button", { name: "Aplicar na página" }).click();
   await expect(page.getByText(/Aplicada como/).first()).toBeVisible();
   expect(await readerFooter()).toContain("versão 1.1.0");
-});
-
-test("trocar a versão à mão: o autor muda o y, o revisor muda o x ao aplicar", async ({ page }) => {
-  const title = `Manual ${unique()}`;
-  const slug = title.toLowerCase().replace(/ /g, "-");
-  await loginAs(page, "admin");
-  const created = await (await page.request.post("/api/admin/pages", { data: { title, content: `# ${title}\n\nTexto.\n` } })).json();
-  await changeViaReview(page.request, created.id, { fields: { published: true } }); // 1.0.0
-
-  await page.goto(`/admin/pages/${created.id}`);
-  await appendToEditor(page, "\n\nMais um trecho.");
-  await page.getByRole("button", { name: /^Salvar/ }).click();
-  await page.getByRole("button", { name: "Enviar para revisão" }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByLabel(/O que mudou e por quê/).fill("Teste de versão escolhida.");
-
-  // padrão: a recomendada (correção = 1.0.1); trocar o y vira 1.4.1 e diz que foi escolhida
-  await expect(dialog.getByLabel("Principal (x)")).toHaveValue("1");
-  await expect(dialog.getByLabel("Secundário (y)")).toHaveValue("0");
-  await expect(dialog.getByLabel("Correção (z)")).toHaveValue("1");
-  await dialog.getByLabel("Secundário (y)").fill("4");
-  await expect(dialog.getByText(/Escolhida por você/)).toBeVisible();
-  await expect(dialog.getByRole("button", { name: /Usar a recomendada \(1\.0\.1\)/ })).toBeVisible();
-
-  // versão que não é maior que a atual é recusada na hora
-  await dialog.getByLabel("Principal (x)").fill("0");
-  await expect(dialog.getByRole("alert")).toContainText("Precisa ser maior que a versão atual (1.0.0)");
-  await expect(dialog.getByRole("button", { name: "Enviar proposta" })).toBeDisabled();
-  await dialog.getByLabel("Principal (x)").fill("1");
-
-  // mudar o tamanho volta para a recomendada
-  await dialog.getByRole("radio", { name: /Novidade/ }).click();
-  await expect(dialog.getByLabel("Secundário (y)")).toHaveValue("1");
-  await dialog.getByLabel("Secundário (y)").fill("4");
-  await dialog.getByRole("button", { name: "Enviar proposta" }).click();
-  await expect(dialog).toBeHidden();
-
-  // o revisor vê a escolha do autor (1.4.0) e a troca antes de aplicar
-  await page.goto("/admin/reviews");
-  await page.getByText(`Atualiza ${title}`).first().click();
-  await page.getByRole("button", { name: "Aprovar" }).click();
-  const section = page.getByRole("region", { name: "Versão resultante" });
-  await expect(section.getByLabel("Secundário (y)")).toHaveValue("4");
-  await section.getByLabel("Principal (x)").fill("2");
-  await expect(section.getByText(/Escolhida por você/)).toBeVisible();
-  await page.getByRole("button", { name: "Aplicar na página" }).click();
-  await expect(page.getByText(/Aplicada como/).first()).toBeVisible();
-  await expect(page.getByText("2.4.0").first()).toBeVisible();
-
-  const reader = await page.context().browser()!.newContext({ baseURL: "http://localhost:5175" });
-  const readerPage = await reader.newPage();
-  await readerPage.goto(`/docs/${slug}`);
-  await expect(readerPage.getByText(/Atualizado em .*, versão 2\.4\.0/)).toBeVisible();
-  await reader.close();
 });
 
 test("o que está sendo editado é guardado sozinho: sair e voltar traz de volta, ainda como não salvo", async ({ page }) => {
@@ -310,10 +253,8 @@ test("letras de situação na árvore: P → M → S → E, com o nome por exten
   await expect(page.getByRole("tooltip")).toContainText("Salva: salva neste navegador");
 
   // enviou para revisão: some o S e aparece o E
-  await page.getByRole("button", { name: "Enviar para revisão" }).click();
-  await page.getByLabel(/O que mudou e por quê/).fill("Teste das letras de situação.");
-  await page.getByRole("button", { name: "Enviar proposta" }).click();
-  await expect(page.getByRole("dialog")).toBeHidden();
+  await sendFromChanges(page, "Teste das letras de situação.");
+  await page.goBack();
   await expect(row.locator('[data-status="review"]')).toBeVisible();
   await expect(row.locator('[data-status="saved"]')).toHaveCount(0);
   await row.locator('[data-status="review"]').hover();
@@ -461,17 +402,16 @@ test("ver o diff local, comparar com o último Salvar e restaurar o último salv
   await expect(page.getByRole("menuitem", { name: /Restaurar o último salvo/ })).toBeDisabled(); // nada depois do Salvar
   await page.keyboard.press("Escape");
 
-  // antes de enviar para revisão: "Ver alterações" dentro do próprio formulário
+  // antes de enviar para revisão: "Ver alterações" na própria tela de envio
   await page.getByRole("button", { name: "Enviar para revisão" }).click();
-  const review = page.getByRole("dialog");
-  await review.getByRole("button", { name: "Ver alterações" }).click();
+  await page.getByTestId("change-row").getByRole("button", { name: "Ver alterações" }).click();
   await expect(page.getByRole("heading", { name: "Alterações no editor" })).toBeVisible();
   await expect(page.getByText("Linha nova A.").last()).toBeVisible();
 
-  // limpa: fecha o diff e o formulário, e descarta tudo
+  // limpa: fecha o diff, volta ao editor e descarta tudo
   await page.keyboard.press("Escape");
   await expect(page.getByRole("heading", { name: "Alterações no editor" })).toBeHidden();
-  await review.getByRole("button", { name: "Cancelar" }).click();
+  await page.goBack();
   await page.getByRole("button", { name: "Mais ações" }).click();
   await page.getByRole("menuitem", { name: /Descartar alterações/ }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Descartar" }).click();
@@ -492,17 +432,15 @@ test("enviar várias páginas de uma vez: cada página salva vira uma proposta",
     await expect(page.getByText("Salvo neste navegador · não enviado")).toBeVisible();
   }
 
-  // pelo menu do botão de enviar
-  await page.getByRole("button", { name: "Mais opções de envio" }).click();
-  await page.getByRole("menuitem", { name: /Enviar várias páginas/ }).click();
+  // a mesma tela de sempre: abre com a página atual marcada e as outras salvas aparecem para marcar
+  await page.getByRole("button", { name: "Enviar para revisão" }).click();
   await expect(page).toHaveURL(/\/admin\/changes/);
   await expect(page.getByTestId("change-row")).toHaveCount(2);
-
   await page.getByRole("checkbox", { name: /Selecionar/ }).first().check();
   await page.getByRole("checkbox", { name: /Selecionar/ }).last().check();
   const enviar = page.getByRole("button", { name: /Enviar para revisão \(2\)/ });
   await expect(enviar).toBeDisabled(); // falta a descrição
-  await page.getByLabel(/Descrição/).fill("Duas páginas juntas.");
+  await page.getByLabel(/O que mudou e por quê/).fill("Duas páginas juntas.");
   await enviar.click();
   await expect(page.getByText("2 propostas enviadas para revisão")).toBeVisible();
 

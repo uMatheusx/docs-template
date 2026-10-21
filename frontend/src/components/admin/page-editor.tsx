@@ -24,6 +24,8 @@ import {
   PencilLine,
   FileDiff,
   RotateCcw,
+  ChevronDown,
+  Save,
   Trash2,
   Undo2,
 } from "lucide-react";
@@ -42,7 +44,6 @@ import { ReviewDialog, type ReviewDraft } from "@/components/admin/review-dialog
 import { SaveTemplateDialog } from "@/components/admin/save-template-dialog";
 import { FIELDS, rebaseLocal, toDraft } from "@/lib/draft";
 import { ChangesDialog } from "@/components/admin/changes-dialog";
-import { ReviewFlow } from "@/components/admin/review-flow";
 import { VersionHistory } from "@/components/admin/version-history";
 import { clearLocal, readLocal, writeLocal, type LocalDraft } from "@/lib/local-drafts";
 import { flattenTree } from "@/lib/tree";
@@ -70,6 +71,7 @@ import {
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Hint } from "@/components/ui/tooltip";
 import { modKey, useModHotkey } from "@/hooks/use-hotkey";
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -371,10 +373,12 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
       });
       return;
     }
-    setReviewOpen(true);
+    // página publicada: o envio é sempre pela tela Alterações (uma ou várias páginas, o mesmo formato)
+    if (reviewOnly) navigate(`/admin/changes?select=${baseline.id}`);
+    else setReviewOpen(true);
   }
 
-  async function submitReview({ title, description, requestPublish, bump, semver }: ReviewDraft) {
+  async function submitReview({ title, description, requestPublish, bump }: ReviewDraft) {
     if (unsaved) {
       toast.error("Salve antes de enviar para revisão");
       return false;
@@ -397,7 +401,6 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         base_version: origin.version,
         base_semver: origin.semver,
         bump,
-        semver,
       });
       // a proposta guarda as alterações: o editor volta para a versão publicada
       clearLocal(baseline.id);
@@ -700,14 +703,20 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-            <ReviewFlow
-              reviewOnly={reviewOnly}
+            {!baseline.published && (
+              <span title={unsaved ? "Salve antes de pedir a publicação" : undefined}>
+                <Button variant="secondary" onClick={openReview} disabled={saving || unsaved}>
+                  <GitPullRequest /> Pedir publicação
+                </Button>
+              </span>
+            )}
+            <SaveButton
               dirty={dirty}
               unsaved={unsaved}
               saving={saving}
               onSave={save}
+              reviewOnly={reviewOnly}
               onReview={openReview}
-              onSendMany={() => navigate(`/admin/changes?select=${baseline.id}`)}
             />
           </div>
         </div>
@@ -1112,5 +1121,99 @@ function SaveState({
                 : `Salvo · ${version}`}
       </motion.span>
     </AnimatePresence>
+  );
+}
+
+/** Salvar rápido (Ctrl+S) ou com uma descrição que aparece no histórico. */
+function SaveButton({
+  dirty,
+  unsaved,
+  saving,
+  onSave,
+  reviewOnly,
+  onReview,
+}: {
+  /** há diferença para a página */
+  dirty: boolean;
+  /** há diferença que ainda não foi guardada em lugar nenhum */
+  unsaved: boolean;
+  saving: boolean;
+  onSave: (note?: string) => Promise<boolean>;
+  reviewOnly: boolean;
+  onReview: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const submit = async () => {
+    if (await onSave(note)) {
+      setNote("");
+      setOpen(false);
+    }
+  };
+  if (reviewOnly) {
+    // página publicada: salvar é local (para poder sair e voltar); publicar é só pela revisão
+    return (
+      <div className="flex items-center gap-2">
+        <Button variant="secondary" onClick={() => onSave()} disabled={!unsaved || saving}>
+          <Save /> Salvar
+          <kbd className="ml-0.5 hidden lg:inline-flex">{modKey} S</kbd>
+        </Button>
+        <span title={unsaved ? "Salve antes de enviar para revisão" : undefined}>
+          <Button onClick={onReview} disabled={!dirty || unsaved || saving}>
+            {saving ? <Loader2 className="animate-spin" /> : <GitPullRequest />} Enviar para revisão
+          </Button>
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex">
+      <Button onClick={() => onSave()} disabled={!dirty || saving} className="rounded-r-none pr-3">
+        {saving ? <Loader2 className="animate-spin" /> : <Save />} Salvar
+        <kbd className="ml-0.5 hidden border-background/25 bg-background/15 text-background/80 lg:inline-flex">{modKey} S</kbd>
+      </Button>
+      <Popover open={open} onOpenChange={setOpen}>
+        <Hint label="Salvar com descrição">
+          <PopoverTrigger asChild>
+            <Button
+              disabled={!dirty || saving}
+              className="rounded-l-none border-l border-background/20 px-2"
+              aria-label="Salvar com descrição"
+            >
+              <ChevronDown />
+            </Button>
+          </PopoverTrigger>
+        </Hint>
+        <PopoverContent align="end" className="w-80">
+          <p className="text-sm font-bold">Salvar com descrição</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Aparece no histórico de versões, como uma mensagem de commit.
+          </p>
+          <textarea
+            autoFocus
+            value={note}
+            maxLength={200}
+            rows={3}
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder="Ex.: Atualiza o fluxo de autenticação com PKCE"
+            className="mt-3 w-full resize-none rounded-xl border bg-background/60 px-3 py-2 text-sm outline-none focus:border-brand/50 focus:ring-4 focus:ring-brand/10"
+          />
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-[11px] text-muted-foreground">
+              {note.length}/200 · {modKey}+Enter
+            </span>
+            <Button size="sm" onClick={submit} disabled={saving}>
+              {saving ? <Loader2 className="animate-spin" /> : <Save />} Salvar versão
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }

@@ -78,3 +78,12 @@ export async function approveAndApply(page: Page, title: string) {
 
 /** Sufixo único: os testes compartilham o backend e não podem colidir. */
 export const unique = () => Date.now().toString(36);
+
+/** No editor de uma página publicada e já salva: Enviar para revisão abre a tela Alterações; envia só ela. */
+export async function sendFromChanges(page: Page, description: string) {
+  await page.getByRole("button", { name: "Enviar para revisão" }).click();
+  await expect(page).toHaveURL(/\/admin\/changes/);
+  await page.getByLabel(/O que mudou e por quê/).fill(description);
+  await page.getByRole("button", { name: /Enviar para revisão \(1\)/ }).click();
+  await expect(page.getByTestId("change-row").first()).toContainText("Enviada para revisão");
+}

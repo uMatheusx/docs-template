@@ -26,7 +26,7 @@ interface Props {
   /** o que já foi guardado (último Salvar ou proposta carregada); null se nada foi */
   saved: Reference | null;
   onRestoreSaved: () => void;
-  onDiscard: () => void;
+  onDiscard?: () => void;
 }
 
 const FIELD_LABEL: Record<Exclude<keyof Draft, "content">, string> = {
@@ -122,7 +122,7 @@ function ChangesBody({ current, published, saved, onRestoreSaved, onDiscard, onC
             <RotateCcw /> Restaurar {saved.label.toLowerCase().startsWith("proposta") ? saved.label.toLowerCase() : "o último salvo"}…
           </Button>
         )}
-        {differsFromPublished && (
+        {differsFromPublished && onDiscard && (
           <Button variant="outline" onClick={onDiscard}>
             <Undo2 /> Descartar tudo…
           </Button>

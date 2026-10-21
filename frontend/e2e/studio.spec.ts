@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { appendToEditor, approveAndApply, changeViaReview, findPage, loginAs, unique } from "./fixtures";
+import { appendToEditor, approveAndApply, changeViaReview, findPage, loginAs, sendFromChanges, unique } from "./fixtures";
 
 test("admin cria um rascunho, pede publicação com descrição, aprova a própria proposta e o leitor vê", async ({ page }) => {
   const id = unique();
@@ -61,8 +61,8 @@ test("em página publicada nem o admin salva direto: só envia para revisão", a
   expect(after.content).not.toContain("Texto que não vai direto.");
 
   await page.getByRole("button", { name: "Enviar para revisão" }).click();
-  await expect(page.getByRole("dialog").getByLabel(/O que mudou e por quê/)).toBeVisible();
-  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(/\/admin\/changes/);
+  await page.goBack();
 
   // a API também recusa a gravação direta
   const res = await page.request.put(`/api/admin/pages/${faq.id}`, { data: { content: "# direto", version: faq.version } });
@@ -78,11 +78,7 @@ test("editora propõe uma mudança, o admin aprova e aplica", async ({ page }) =
   await page.goto(`/admin/pages/${faq.id}`);
   await appendToEditor(page, `\n\n${marker}`);
   await page.getByRole("button", { name: /^Salvar/ }).click(); // só se envia o que foi salvo
-  await page.getByRole("button", { name: "Enviar para revisão" }).click();
-  await page.getByLabel("Resumo").fill("Acrescenta uma linha ao FAQ");
-  await page.getByLabel(/O que mudou e por quê/).fill("Teste de ponta a ponta do fluxo de revisão.");
-  await page.getByRole("button", { name: "Enviar proposta" }).click();
-  await expect(page.getByRole("dialog")).toBeHidden();
+  await sendFromChanges(page, "Teste de ponta a ponta do fluxo de revisão.");
 
   // leitor ainda não vê a mudança
   await page.context().clearCookies();
@@ -92,7 +88,7 @@ test("editora propõe uma mudança, o admin aprova e aplica", async ({ page }) =
 
   // admin aprova e aplica
   await loginAs(page, "admin");
-  await approveAndApply(page, "Acrescenta uma linha ao FAQ");
+  await approveAndApply(page, "Atualiza FAQ");
 
   // leitor vê o texto novo
   await page.context().clearCookies();
@@ -113,11 +109,10 @@ Texto.` } })).json();
   await page.getByRole("switch").first().click(); // Publicada -> Rascunho
   await page.getByRole("button", { name: /^Salvar/ }).click(); // só se envia o que foi salvo
   await page.getByRole("button", { name: "Enviar para revisão" }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText("Altera publicação")).toBeVisible();
-  await dialog.getByLabel(/O que mudou e por quê/).fill("Tirando do ar até revisar o texto.");
-  await dialog.getByRole("button", { name: "Enviar proposta" }).click();
-  await expect(dialog).toBeHidden();
+  await expect(page.getByTestId("change-row")).toContainText("publicação");
+  await page.getByLabel(/O que mudou e por quê/).fill("Tirando do ar até revisar o texto.");
+  await page.getByRole("button", { name: /Enviar para revisão \(1\)/ }).click();
+  await expect(page.getByTestId("change-row")).toContainText("Enviada para revisão");
 
   // ainda publicada até a proposta ser aplicada
   await page.context().clearCookies();
@@ -137,10 +132,8 @@ test("proposta carregada no editor não conta como alteração não salva", asyn
   await page.goto(`/admin/pages/${arquitetura.id}`);
   await appendToEditor(page, "\n\nTexto guardado na proposta.");
   await page.getByRole("button", { name: /^Salvar/ }).click(); // só se envia o que foi salvo
-  await page.getByRole("button", { name: "Enviar para revisão" }).click();
-  await page.getByLabel(/O que mudou e por quê/).fill("Proposta para testar o carregamento.");
-  await page.getByRole("button", { name: "Enviar proposta" }).click();
-  await expect(page.getByRole("dialog")).toBeHidden();
+  await sendFromChanges(page, "Proposta para testar o carregamento.");
+  await page.goBack();
 
   // carregar a proposta: o texto volta ao editor e o estado mostra a proposta, não "não salvo"
   await page.getByRole("button", { name: "Carregar no editor" }).click();

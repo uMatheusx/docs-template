@@ -1,18 +1,21 @@
-import { CheckCircle2, GitPullRequest, Layers, Loader2 } from "lucide-react";
+import { CheckCircle2, FileDiff, GitPullRequest, Layers, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import useSWR, { mutate } from "swr";
 
+import { ChangesDialog } from "@/components/admin/changes-dialog";
 import { StatusLetter } from "@/components/status-letter";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, docsApi, keys, type Page } from "@/lib/api";
-import { changedFields, reviewPayload } from "@/lib/draft";
+import { changedFields, rebaseLocal, reviewPayload, toDraft } from "@/lib/draft";
 import { clearLocal, readLocal, useLocalDrafts } from "@/lib/local-drafts";
-import { BUMP_OPTIONS } from "@/lib/semver";
+import { BUMP_OPTIONS, bumpSemver } from "@/lib/semver";
 import type { Bump } from "@/lib/semver";
 import { cn } from "@/lib/utils";
+
+const LABEL = { title: "título", slug: "endereço", icon: "ícone", description: "descrição", published: "publicação", content: "conteúdo" } as const;
 
 /** Uma linha por página com rascunho neste navegador. Só as publicadas e já salvas podem ir no lote. */
 function Row({
@@ -32,9 +35,11 @@ function Row({
 }) {
   const { data: page, isLoading } = useSWR<Page>(keys.adminPage(pageId));
   const local = readLocal(pageId);
+  const [diffOpen, setDiffOpen] = useState(false);
   if (isLoading || !page) return <Skeleton className="h-16 rounded-2xl" />;
   const saved = !!local?.explicit;
-  const changes = local ? changedFields(local.draft, page).length : 0;
+  const changedList = local ? changedFields(rebaseLocal(local, page) , page) : [];
+  const changes = changedList.length;
   const ready = saved && page.published && changes > 0;
   const reason = !page.published
     ? "Rascunho: abra a página para salvar ou pedir a publicação."
@@ -63,7 +68,7 @@ function Row({
           {page.title}
         </p>
         <p className="truncate text-xs text-muted-foreground">
-          {done ? "Enviada para revisão." : (reason ?? `${changes} ${changes === 1 ? "campo alterado" : "campos alterados"} · sobre a ${page.semver}`)}
+          {done ? "Enviada para revisão." : (reason ?? `Altera ${changedList.map((f) => LABEL[f]).join(", ")} · ${page.semver} → ${bumpSemver(page.semver, bump)}`)}
         </p>
       </div>
       {ready && !done && (
@@ -80,6 +85,21 @@ function Row({
           ))}
         </select>
       )}
+      {local && (
+        <>
+          <Button variant="ghost" size="sm" onClick={() => setDiffOpen(true)}>
+            <FileDiff /> Ver alterações
+          </Button>
+          <ChangesDialog
+            open={diffOpen}
+            onOpenChange={setDiffOpen}
+            current={rebaseLocal(local, page)}
+            published={{ label: `Desde a versão publicada (${page.semver})`, legend: `Comparando com a versão publicada (${page.semver})`, draft: toDraft(page) }}
+            saved={null}
+            onRestoreSaved={() => setDiffOpen(false)}
+          />
+        </>
+      )}
       <Button asChild variant="ghost" size="sm">
         <Link to={`/admin/pages/${pageId}`}>Abrir</Link>
       </Button>
@@ -90,12 +110,13 @@ function Row({
 export default function ChangesPage() {
   const drafts = useLocalDrafts();
   const [params] = useSearchParams();
-  const ids = useMemo(() => Object.keys(drafts), [drafts]);
   const [picked, setPicked] = useState<Record<string, boolean>>(() => (params.get("select") ? { [params.get("select")!]: true } : {}));
   const [bumps, setBumps] = useState<Record<string, Bump>>({});
   const [done, setDone] = useState<Record<string, boolean>>({});
   const [description, setDescription] = useState("");
   const [sending, setSending] = useState(false);
+  // as já enviadas continuam na lista (o rascunho local some ao enviar) para mostrar o resultado
+  const ids = useMemo(() => [...new Set([...Object.keys(drafts), ...Object.keys(done)])], [drafts, done]);
 
   const chosen = ids.filter((id) => picked[id] && !done[id]);
 
@@ -107,7 +128,7 @@ export default function ChangesPage() {
       try {
         const page = await api<Page>(keys.adminPage(id));
         const payload = local && page.published && local.explicit
-          ? reviewPayload(page, local, { title: page.title, description, bump: bumps[id] ?? "patch" })
+          ? reviewPayload(page, local, { title: `Atualiza ${page.title}`, description, bump: bumps[id] ?? "patch" })
           : null;
         if (!payload) continue;
         await docsApi.submitReview(id, payload);
@@ -157,7 +178,7 @@ export default function ChangesPage() {
 
           <div className="mt-6 space-y-3 rounded-2xl border p-4">
             <label className="block text-sm font-semibold" htmlFor="batch-description">
-              Descrição (vale para todas)
+              O que mudou e por quê (vale para todas as páginas)
             </label>
             <textarea
               id="batch-description"
