@@ -136,8 +136,8 @@ Sem filtro, a referência inteira é exibida. O trecho acompanha a especificaç�
 
 **Versões x.y.z**
 - Cada página tem uma versão no formato `x.y.z`, como as versões do GitHub. Páginas novas nascem em `0.1.0` (rascunho); cada salvamento direto de rascunho sobe o último número; a **primeira publicação vira `1.0.0`**
-- Ao enviar uma mudança para revisão, o autor escolhe o tamanho: **Correção** (`x.y.Z`: texto, link, formatação), **Novidade** (`x.Y.0`: conteúdo novo sem quebrar o que existia) ou **Mudança grande** (`X.0.0`: reescrita ou mudança que quebra quem seguia a versão anterior). O formulário mostra a prévia (ex.: `1.0.0 → 1.1.0`)
-- O número recomendado vem do tamanho escolhido, mas **qualquer parte do `x.y.z` pode ser trocada à mão**, tanto por quem envia a proposta quanto por quem a aplica (que tem a palavra final). A versão escolhida precisa ser maior que a atual (compara número a número: `1.10.0` > `1.9.0`); mudar o tamanho volta para a recomendada, e há um atalho "Usar a recomendada"
+- Ao enviar uma mudança para revisão, o autor escolhe o tamanho: **Correção** (`x.y.Z`: texto, link, formatação), **Novidade** (`x.Y.0`: conteúdo novo sem quebrar o que existia) ou **Mudança grande** (`X.0.0`: reescrita ou mudança que quebra quem seguia a versão anterior). A tela Alterações mostra a prévia (ex.: `1.0.0 → 1.1.0`)
+- A versão resultante vem só do tamanho escolhido (ninguém digita o número). Quem aplica a proposta vê a versão que a página vai ter.
 - Se a página avançou depois da proposta e a versão escolhida pelo autor deixou de ser maior que a atual, a tela de aplicar avisa e sugere a recomendada no lugar
 - A versão nova é calculada **quando a proposta é aplicada**, sobre a versão que a página tem naquele momento (se outra mudança entrou antes, a conta já considera)
 - Histórico, revisões, eventos e mensagens de mesclagem mostram `x.y.z`. Por baixo continua um número de revisão inteiro, que cuida de edições simultâneas e da mesclagem
