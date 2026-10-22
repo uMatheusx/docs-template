@@ -121,7 +121,7 @@ export default function AdminLayout() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-sidebar md:flex-row">
+    <div className="flex h-screen flex-col overflow-hidden bg-sidebar md:flex-row">
       <aside className="flex shrink-0 items-center gap-1 px-2 py-2 md:w-[76px] md:flex-col md:px-0 md:py-4">
         <NavLink to="/admin" aria-label="Account Hub Studio" className="mb-0 md:mb-5">
           <Logo className="h-9 w-9 transition-transform hover:-rotate-6" />
@@ -194,7 +194,7 @@ export default function AdminLayout() {
         </div>
       </aside>
 
-      <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background md:my-2 md:mr-2 md:rounded-xl md:border md:border-border/70">
+      <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background md:my-2 md:mr-2 md:rounded-xl md:border md:border-border/70">
         <div className="h-full overflow-y-auto">
           <Outlet context={context} />
         </div>

@@ -765,7 +765,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
           {mode === "split" && <ResizableHandle />}
           {mode !== "write" && (
             <ResizablePanel id="preview" order={2} minSize={28}>
-              <div ref={previewRef} className="h-full overflow-y-auto">
+              <div ref={previewRef} className="relative h-full overflow-y-auto">
                 <div className="mx-auto max-w-3xl px-8 py-8">
                   {isSpec ? (
                     <ApiReference kind={kind} content={preview} />
