@@ -32,6 +32,9 @@ import { cn } from "@/lib/utils";
 
 type Position = "before" | "after" | "inside";
 
+/** Largura da seta de expandir (14px do ícone + 2×2px de padding) mais o espaço entre itens da linha (4px). */
+const CHEVRON_SLOT = 22;
+
 interface TreeManagerProps {
   tree: TreeNode[];
   selectedId?: string;
@@ -166,7 +169,8 @@ export function TreeManager({ tree, selectedId, onSelect, onAddChild, onMove, on
           onDragEnd={endDrag}
           onDragOver={(e) => onRowDragOver(e, node)}
           onDrop={(e) => onRowDrop(e, node)}
-          style={{ marginLeft: depth * 14 }}
+          // sem filhas não há seta: a linha avança a largura dela para o ícone ficar alinhado com o das irmãs que têm
+          style={{ marginLeft: depth * 14 + (node.children.length ? 0 : CHEVRON_SLOT) }}
           className={cn("group relative flex items-center text-[13px]", dragId === node.id && "opacity-40")}
         >
           {isDrop && drop.position !== "inside" && (
@@ -192,17 +196,19 @@ export function TreeManager({ tree, selectedId, onSelect, onAddChild, onMove, on
           {!dragDisabled && (
             <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/40 opacity-0 transition-opacity group-hover:opacity-100" />
           )}
-          <button
-            type="button"
-            className={cn("rounded p-0.5 text-muted-foreground hover:bg-accent", !node.children.length && "invisible")}
-            onClick={(e) => {
-              e.stopPropagation();
-              setCollapsed((s) => (s.has(node.id) ? s.delete(node.id) : s.add(node.id), new Set(s)));
-            }}
-            aria-label={isOpen ? "Recolher" : "Expandir"}
-          >
-            <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isOpen && "rotate-90")} />
-          </button>
+          {node.children.length > 0 && (
+            <button
+              type="button"
+              className="rounded p-0.5 text-muted-foreground hover:bg-accent"
+              onClick={(e) => {
+                e.stopPropagation();
+                setCollapsed((s) => (s.has(node.id) ? s.delete(node.id) : s.add(node.id), new Set(s)));
+              }}
+              aria-label={isOpen ? "Recolher" : "Expandir"}
+            >
+              <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isOpen && "rotate-90")} />
+            </button>
+          )}
           <span
             className={cn(
               "flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border bg-background",
