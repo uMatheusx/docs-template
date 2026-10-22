@@ -1,5 +1,5 @@
-import { ArrowRight, FilePlus2, FileUp, Loader2, PenSquare, Search, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowRight, FilePlus2, FileUp, Loader2, PenSquare } from "lucide-react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
@@ -26,7 +26,7 @@ import { Hint } from "@/components/ui/tooltip";
 import { modKey } from "@/hooks/use-hotkey";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { ApiError, docsApi, keys, type Page, type TreeNode } from "@/lib/api";
-import { countNodes, filterTree, findNode, flattenTree, isDescendant } from "@/lib/tree";
+import { countNodes, findNode, flattenTree, isDescendant } from "@/lib/tree";
 import { timeAgo } from "@/lib/utils";
 import { useAdmin } from "@/pages/admin/admin-layout";
 
@@ -35,11 +35,9 @@ export default function AdminPages() {
   const navigate = useNavigate();
   const { mutate } = useSWRConfig();
   const { tree, treeLoading, openNewPage, openImport } = useAdmin();
-  const [filter, setFilter] = useState("");
   const [toDelete, setToDelete] = useState<TreeNode>();
   const [toMove, setToMove] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const filtered = useMemo(() => filterTree(tree, filter), [tree, filter]);
   const desktop = useMediaQuery("(min-width: 768px)");
 
   async function confirmDelete() {
@@ -81,25 +79,8 @@ export default function AdminPages() {
           </Hint>
         </div>
       </div>
-      <div className="px-3 pb-2">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filtrar"
-            aria-label="Filtrar páginas"
-            className="h-8 w-full rounded-lg border bg-background/70 pl-8 pr-7 text-xs outline-none transition-all focus:border-brand/50 focus:ring-4 focus:ring-brand/10"
-          />
-          {filter && (
-            <button onClick={() => setFilter("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" aria-label="Limpar">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-      </div>
       <ScrollArea className="flex-1">
-        <div className="px-2 pb-4">
+        <div className="px-2 pb-4 pt-1.5">
           {treeLoading ? (
             <div className="space-y-1.5 p-1">
               {Array.from({ length: 10 }, (_, i) => (
@@ -108,9 +89,8 @@ export default function AdminPages() {
             </div>
           ) : (
             <TreeManager
-              tree={filtered}
+              tree={tree}
               selectedId={id}
-              dragDisabled={!!filter}
               onSelect={(node) => navigate(`/admin/pages/${node.id}`)}
               onAddChild={(parentId) => openNewPage(parentId)}
               onMove={(node) => setToMove(node.id)}

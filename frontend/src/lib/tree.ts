@@ -1,5 +1,4 @@
 import type { TreeNode } from "@/lib/api";
-import { normalize } from "@/lib/utils";
 
 /** Lista os nós em ordem de leitura (pré-ordem). */
 export function flattenTree(nodes: TreeNode[], depth = 0, out: (TreeNode & { depth: number })[] = []) {
@@ -42,12 +41,3 @@ export function countNodes(nodes: TreeNode[]): number {
   return nodes.reduce((sum, n) => sum + 1 + countNodes(n.children), 0);
 }
 
-/** Mantém nós que casam com o filtro (e seus ancestrais). */
-export function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
-  const q = normalize(query.trim());
-  if (!q) return nodes;
-  return nodes.flatMap((node) => {
-    const children = filterTree(node.children, query);
-    return normalize(node.title).includes(q) || children.length ? [{ ...node, children }] : [];
-  });
-}

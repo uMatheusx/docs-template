@@ -166,16 +166,8 @@ export function TreeManager({ tree, selectedId, onSelect, onAddChild, onMove, on
           onDragEnd={endDrag}
           onDragOver={(e) => onRowDragOver(e, node)}
           onDrop={(e) => onRowDrop(e, node)}
-          onClick={() => onSelect(node)}
-          style={{ paddingLeft: depth * 14 + 4 }}
-          className={cn(
-            "group relative flex cursor-pointer items-center gap-1.5 rounded-xl py-1.5 pr-1 text-[13px] transition-colors",
-            selected
-              ? "bg-brand/10 font-bold text-foreground ring-1 ring-brand/25"
-              : "font-medium text-muted-foreground hover:bg-accent hover:text-foreground",
-            dragId === node.id && "opacity-40",
-            isDrop && drop.position === "inside" && "bg-brand/15 text-foreground ring-2 ring-brand/70",
-          )}
+          style={{ marginLeft: depth * 14 }}
+          className={cn("group relative flex items-center text-[13px]", dragId === node.id && "opacity-40")}
         >
           {isDrop && drop.position !== "inside" && (
             <span
@@ -187,12 +179,22 @@ export function TreeManager({ tree, selectedId, onSelect, onAddChild, onMove, on
               <span className="-ml-1 h-2 w-2 rounded-full border-2 border-brand bg-background" />
             </span>
           )}
+          <div
+            onClick={() => onSelect(node)}
+            className={cn(
+              "flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-xl py-1.5 pl-1 pr-1 transition-colors",
+              selected
+                ? "bg-brand/10 font-bold text-foreground ring-1 ring-brand/25"
+                : "font-medium text-muted-foreground group-hover:bg-accent group-hover:text-foreground",
+              isDrop && drop.position === "inside" && "bg-brand/15 text-foreground ring-2 ring-brand/70",
+            )}
+          >
           {!dragDisabled && (
             <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/40 opacity-0 transition-opacity group-hover:opacity-100" />
           )}
           <button
             type="button"
-            className={cn("rounded p-0.5 text-muted-foreground hover:bg-background", !node.children.length && "invisible")}
+            className={cn("rounded p-0.5 text-muted-foreground hover:bg-accent", !node.children.length && "invisible")}
             onClick={(e) => {
               e.stopPropagation();
               setCollapsed((s) => (s.has(node.id) ? s.delete(node.id) : s.add(node.id), new Set(s)));
@@ -227,7 +229,7 @@ export function TreeManager({ tree, selectedId, onSelect, onAddChild, onMove, on
                   e.stopPropagation();
                   onAddChild(node.id);
                 }}
-                className="rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                className="rounded-md p-1 text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:bg-background focus-visible:text-foreground"
                 aria-label={`Nova subpágina em ${node.title}`}
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -238,7 +240,7 @@ export function TreeManager({ tree, selectedId, onSelect, onAddChild, onMove, on
                 <button
                   type="button"
                   onClick={(e) => e.stopPropagation()}
-                  className="rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                  className="rounded-md p-1 text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:bg-background focus-visible:text-foreground"
                   aria-label={`Ações de ${node.title}`}
                 >
                   <MoreHorizontal className="h-3.5 w-3.5" />
@@ -272,6 +274,7 @@ export function TreeManager({ tree, selectedId, onSelect, onAddChild, onMove, on
               </DropdownMenuContent>
             </DropdownMenu>
           </span>
+          </div>
         </div>
         {isOpen && node.children.length > 0 && (
           <ul className="mt-0.5 space-y-0.5">
