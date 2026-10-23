@@ -3,7 +3,7 @@ import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import type { Review } from "@/lib/api";
-import { REVIEW_STATUS } from "@/lib/reviews";
+import { REVIEW_STATUS } from "@/lib/reviews/labels";
 
 /** Faixa do editor sobre as propostas da página: a sua (para carregar no editor) e as de outras pessoas. */
 export function ReviewBanner({

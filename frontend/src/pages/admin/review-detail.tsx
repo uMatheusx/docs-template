@@ -22,8 +22,8 @@ import { Link, useParams } from "react-router";
 import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 
-import { DiffView } from "@/components/admin/diff-view";
-import { MergeConflicts } from "@/components/admin/merge-conflicts";
+import { DiffView } from "@/components/admin/reviews/diff-view";
+import { MergeConflicts } from "@/components/admin/reviews/merge-conflicts";
 import { ApiReference } from "@/components/api/api-reference";
 import { Markdown } from "@/components/markdown/markdown";
 import {
@@ -42,8 +42,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useSession } from "@/hooks/use-session";
 import { ApiError, docsApi, keys, type MergeChoice, type ReviewDetail, type ReviewEvent, type ReviewItemDetail } from "@/lib/api";
-import { collapseDiff, diffLines, diffStats } from "@/lib/diff";
-import { ACTIVE_STATUSES, describeFields, EVENT_VERB } from "@/lib/reviews";
+import { collapseDiff, diffLines, diffStats } from "@/lib/reviews/diff";
+import { ACTIVE_STATUSES, describeFields, EVENT_VERB } from "@/lib/reviews/labels";
 import { BUMP_LABEL } from "@/lib/semver";
 import { cn, formatDate, splitLeadingH1, timeAgo } from "@/lib/utils";
 import { ReviewStatusBadge } from "@/pages/admin/reviews";

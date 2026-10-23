@@ -8,12 +8,12 @@ import uuid
 import httpx
 from fastapi import HTTPException, status
 
-from .markdown_utils import first_heading, fold, parse_frontmatter, slugify
-from .schemas import PageCreate, PageUpdate
-from .semver import DRAFT_START, FIRST_RELEASE, Bump, bump_semver, is_greater
-from .specs import detect_kind, parse_spec, spec_info
-from .storage import Storage, VersionConflict, utcnow
-from .tree import build_tree, descendants, flatten, sort_key
+from ..lib.markdown import first_heading, fold, parse_frontmatter, slugify
+from ..lib.semver import DRAFT_START, FIRST_RELEASE, Bump, bump_semver, is_greater
+from ..lib.specs import detect_kind, parse_spec, spec_info
+from ..lib.tree import build_tree, descendants, flatten, sort_key
+from ..schemas import PageCreate, PageUpdate
+from ..storage import Storage, VersionConflict, utcnow
 
 
 def not_found(what: str = "Página") -> HTTPException:

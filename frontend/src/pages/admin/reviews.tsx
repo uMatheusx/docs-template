@@ -4,10 +4,10 @@ import { useState } from "react";
 import { Link } from "react-router";
 import useSWR from "swr";
 
-import { PageIcon } from "@/components/page-icon";
+import { PageIcon } from "@/components/common/page-icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { keys, type Review } from "@/lib/api";
-import { REVIEW_STATUS } from "@/lib/reviews";
+import { REVIEW_STATUS } from "@/lib/reviews/labels";
 import { cn, timeAgo } from "@/lib/utils";
 import { useAdmin } from "@/pages/admin/admin-layout";
 

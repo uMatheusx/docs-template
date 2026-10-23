@@ -3,7 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 
-import { ParentSelect } from "@/components/admin/parent-select";
+import { ParentSelect } from "@/components/admin/tree/parent-select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";

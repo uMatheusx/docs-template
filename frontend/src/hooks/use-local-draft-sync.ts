@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { Draft } from "@/components/admin/inspector";
-import { clearLocal, writeLocal } from "@/lib/local-drafts";
+import type { Draft } from "@/lib/drafts/draft";
+import { clearLocal, writeLocal } from "@/lib/drafts/local-drafts";
 
 interface LocalDraftState {
   draft: Draft;

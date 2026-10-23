@@ -1,6 +1,6 @@
 /**
  * Versões das páginas no formato x.y.z. O servidor é quem calcula de verdade ao aplicar uma proposta;
- * estas funções espelham a regra (backend/app/semver.py) só para mostrar a prévia antes de enviar.
+ * estas funções espelham a regra (backend/app/lib/semver.py) só para mostrar a prévia antes de enviar.
  */
 export type Bump = "patch" | "minor" | "major";
 

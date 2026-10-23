@@ -4,7 +4,7 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 
-import { ParentSelect } from "@/components/admin/parent-select";
+import { ParentSelect } from "@/components/admin/tree/parent-select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";

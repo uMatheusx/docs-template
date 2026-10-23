@@ -1,5 +1,5 @@
 from app import main
-from app.seo import page_meta, render_index
+from app.lib.seo import page_meta, render_index
 
 HTML = (
     '<html><head><meta name="description" content="Documentação do Account Hub" />'

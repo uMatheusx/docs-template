@@ -8,9 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from ..auth import require_admin, require_editor
 from ..config import Settings, get_settings
 from ..deps import get_reviews, get_service, get_storage, get_templates
-from ..library import TemplateService
-from ..links import link_report
-from ..reviews import ReviewService
+from ..lib.specs import detect_kind
 from ..schemas import (
     Asset,
     HistoryContent,
@@ -33,8 +31,10 @@ from ..schemas import (
     TreeNode,
     User,
 )
-from ..service import DocsService, not_found
-from ..specs import detect_kind
+from ..services.docs import DocsService, not_found
+from ..services.links import link_report
+from ..services.reviews import ReviewService
+from ..services.templates import TemplateService
 from ..storage import Storage
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_editor)])

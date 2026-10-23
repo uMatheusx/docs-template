@@ -1,7 +1,7 @@
 import { Compass, Home } from "lucide-react";
 import { Link, isRouteErrorResponse, useRouteError } from "react-router";
 
-import { Logo } from "@/components/brand";
+import { Logo } from "@/components/common/brand";
 import { Button } from "@/components/ui/button";
 
 export default function NotFound() {

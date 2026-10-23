@@ -7,7 +7,7 @@ from ..auth import current_user, require_reader
 from ..config import Settings, get_settings
 from ..deps import get_service, get_storage
 from ..schemas import Page, SearchResult, SiteInfo, TreeNode, User
-from ..service import DocsService
+from ..services.docs import DocsService
 from ..storage import Storage
 
 router = APIRouter(prefix="/api", tags=["docs"])

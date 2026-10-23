@@ -1,6 +1,6 @@
 import pytest
 
-from app.semver import bump_semver, is_valid, parse
+from app.lib.semver import bump_semver, is_valid, parse
 
 
 def test_bumps():

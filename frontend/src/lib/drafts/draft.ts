@@ -1,6 +1,15 @@
-import type { Draft } from "@/components/admin/inspector";
 import type { Page, ReviewFields, ReviewItemInput } from "@/lib/api";
-import type { LocalDraft } from "@/lib/local-drafts";
+import type { LocalDraft } from "@/lib/drafts/local-drafts";
+
+/** O que o editor edita numa página: as propriedades e o texto. */
+export interface Draft {
+  title: string;
+  slug: string;
+  icon: string | null;
+  description: string;
+  published: boolean;
+  content: string;
+}
 
 export const FIELDS = ["title", "slug", "icon", "description", "published", "content"] as const;
 

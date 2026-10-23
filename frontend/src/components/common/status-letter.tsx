@@ -1,6 +1,6 @@
 import { Hint } from "@/components/ui/tooltip";
-import type { LocalSummary } from "@/lib/local-drafts";
-import { pageStatuses, STATUS, type PageStatus } from "@/lib/page-status";
+import type { LocalSummary } from "@/lib/drafts/local-drafts";
+import { pageStatuses, STATUS, type PageStatus } from "@/lib/drafts/page-status";
 import { cn } from "@/lib/utils";
 
 export function StatusLetter({ status, className }: { status: PageStatus; className?: string }) {

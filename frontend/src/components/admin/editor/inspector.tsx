@@ -3,7 +3,7 @@ import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 
-import { IconPicker } from "@/components/admin/icon-picker";
+import { IconPicker } from "@/components/admin/tree/icon-picker";
 import { MethodBadge } from "@/components/api/openapi-view";
 import { asyncChannels, isObj, listOperations, parseSpec } from "@/components/api/spec";
 import { Input } from "@/components/ui/input";
@@ -11,16 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { keys, type HistoryEntry, type Page, type PageKind } from "@/lib/api";
+import type { Draft } from "@/lib/drafts/draft";
 import { cn, countWords, formatBytes, formatDate, readingTime, timeAgo } from "@/lib/utils";
-
-export interface Draft {
-  title: string;
-  slug: string;
-  icon: string | null;
-  description: string;
-  published: boolean;
-  content: string;
-}
 
 type Tab = "props" | "outline" | "versions";
 const TABS: { id: Tab; label: string; icon: typeof Hash }[] = [

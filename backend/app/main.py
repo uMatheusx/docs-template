@@ -11,10 +11,10 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
+from .lib.seo import page_meta, render_index
 from .routers import admin, auth, public
-from .seed import seed_if_empty
-from .seo import page_meta, render_index
-from .service import DocsService
+from .services.docs import DocsService
+from .services.seed import seed_if_empty
 from .storage import Storage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")

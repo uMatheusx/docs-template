@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from app.merge3 import merge3
+from app.lib.merge3 import merge3
 
 BASE = "# Título\n\nPrimeiro parágrafo.\n\nSegundo parágrafo.\n\nTerceiro parágrafo.\n"
 

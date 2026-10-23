@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import useSWR from "swr";
 
-import { PageIcon } from "@/components/page-icon";
+import { PageIcon } from "@/components/common/page-icon";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { keys, type Page } from "@/lib/api";
 import { readingTime, splitLeadingH1 } from "@/lib/utils";

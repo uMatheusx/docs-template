@@ -21,7 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { insertBlock, prefixLines, wrapSelection } from "@/components/admin/editor-commands";
+import { insertBlock, prefixLines, wrapSelection } from "@/components/admin/editor/editor-commands";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -33,7 +33,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Hint } from "@/components/ui/tooltip";
 import { modKey } from "@/hooks/use-hotkey";
-import { CALLOUT_TYPES, MERMAID_SNIPPETS, TABLE_SNIPPET } from "@/lib/snippets";
+import { CALLOUT_TYPES, MERMAID_SNIPPETS, TABLE_SNIPPET } from "@/lib/content/snippets";
 
 interface Action {
   icon: LucideIcon;

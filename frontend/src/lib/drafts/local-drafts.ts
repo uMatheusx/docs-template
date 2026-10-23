@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import type { Draft } from "@/components/admin/inspector";
+import type { Draft } from "@/lib/drafts/draft";
 
 /**
  * Rascunhos guardados no navegador (localStorage).

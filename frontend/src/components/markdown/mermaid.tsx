@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/tooltip";
 import { useTheme } from "@/hooks/use-theme";
-import { bodyFont } from "@/lib/typography";
+import { bodyFont } from "@/lib/content/typography";
 import { cn } from "@/lib/utils";
 
 type MermaidApi = typeof import("mermaid").default;

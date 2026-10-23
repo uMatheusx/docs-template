@@ -1,9 +1,9 @@
 from fastapi import Depends, Request
 
 from .config import Settings, get_settings
-from .library import TemplateService
-from .reviews import ReviewService
-from .service import DocsService
+from .services.docs import DocsService
+from .services.reviews import ReviewService
+from .services.templates import TemplateService
 from .storage import Storage
 
 

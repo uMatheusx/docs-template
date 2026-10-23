@@ -3,7 +3,7 @@ import { ArrowRight, CornerDownLeft, FileText, Loader2, Search, Sparkles, type L
 import { useDeferredValue, useMemo, useState } from "react";
 import useSWR from "swr";
 
-import { PageIcon } from "@/components/page-icon";
+import { PageIcon } from "@/components/common/page-icon";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { keys, type SearchResult, type TreeNode } from "@/lib/api";
 import { flattenTree } from "@/lib/tree";

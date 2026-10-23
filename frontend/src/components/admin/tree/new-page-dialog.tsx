@@ -4,9 +4,9 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 
-import { IconPicker } from "@/components/admin/icon-picker";
-import { ParentSelect } from "@/components/admin/parent-select";
-import { PageIcon } from "@/components/page-icon";
+import { IconPicker } from "@/components/admin/tree/icon-picker";
+import { ParentSelect } from "@/components/admin/tree/parent-select";
+import { PageIcon } from "@/components/common/page-icon";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useSession } from "@/hooks/use-session";
 import { docsApi, keys, type Template, type TreeNode } from "@/lib/api";
-import { BUILTIN_TEMPLATES, fillTemplate, fromCustom, type PageTemplate } from "@/lib/templates";
+import { BUILTIN_TEMPLATES, fillTemplate, fromCustom, type PageTemplate } from "@/lib/content/templates";
 import { cn } from "@/lib/utils";
 
 interface Props {

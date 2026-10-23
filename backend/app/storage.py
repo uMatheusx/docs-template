@@ -40,7 +40,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from .config import Settings
-from .markdown_utils import to_search_text
+from .lib.markdown import to_search_text
 
 log = logging.getLogger(__name__)
 

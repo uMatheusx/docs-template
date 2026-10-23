@@ -9,9 +9,9 @@ import type { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
 import { asyncChannels, isObj, listOperations, parseSpec, str, type Obj } from "@/components/api/spec";
-import { SPEC_HINT } from "@/lib/spec-hint";
+import { SPEC_HINT } from "@/lib/content/spec-hint";
 import { api, fetchText, isAssetRef, keys, type Asset, type Page } from "@/lib/api";
-import { CALLOUT_TYPES, MERMAID_SNIPPETS, TABLE_SNIPPET } from "@/lib/snippets";
+import { CALLOUT_TYPES, MERMAID_SNIPPETS, TABLE_SNIPPET } from "@/lib/content/snippets";
 
 /** Disparado quando o usuário escolhe "/Imagem" — o editor abre o seletor de arquivos. */
 export const SLASH_IMAGE_EVENT = "ah:slash-image";

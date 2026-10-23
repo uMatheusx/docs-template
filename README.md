@@ -207,7 +207,7 @@ Toda resposta leva o tempo gasto no cabeçalho `Server-Timing`, e as que passam 
 ---
 title: Webhooks
 description: Como receber eventos do Account Hub
-icon: Webhook          # nome de ícone lucide (veja frontend/src/lib/icons.ts)
+icon: Webhook          # nome de ícone lucide (veja frontend/src/lib/content/icons.ts)
 slug: webhooks
 published: true        # ou draft: true
 ---
@@ -240,23 +240,48 @@ docker run -p 8000:8000 --env-file .env.prod accounthub-docs
 ```
 backend/
   app/
-    main.py            # FastAPI, rotas e servidor do bundle (SPA fallback)
-    storage.py         # DynamoDB + S3: chaves de cada registro, textos imutáveis, cache da árvore
-    service.py         # árvore, CRUD, mover, busca, importação (httpx)
-    auth.py            # JWT via cookie httpOnly ou Bearer; papéis admin/editor
-    reviews.py         # propostas de revisão (comentar, aprovar, aplicar)
-    library.py         # modelos de página
-    specs.py           # detecção e metadados de OpenAPI/AsyncAPI
-    links.py           # relatório de links e imagens quebrados
-    routers/           # auth, public (leitura) e admin
-    seed_content/      # páginas de exemplo
-  tests/               # pytest + moto
+    main.py              # FastAPI: rotas, bundle do frontend (SPA) e tempo das requisições
+    config.py            # configuração (variáveis de ambiente)
+    auth.py              # JWT via cookie httpOnly ou Bearer; papéis admin/editor
+    deps.py              # injeção de dependências das rotas
+    schemas.py           # modelos de entrada e saída da API
+    storage.py           # DynamoDB + S3: chaves de cada registro, textos imutáveis, cache da árvore
+    routers/             # auth, public (leitura) e admin (Studio)
+    services/            # regras de negócio
+      docs.py            #   árvore, CRUD, mover, busca, importação
+      reviews.py         #   propostas de revisão (uma ou várias páginas)
+      templates.py       #   modelos de página
+      links.py           #   relatório de links e imagens quebrados
+      seed.py            #   carga inicial com as páginas de exemplo
+    lib/                 # funções puras, sem acesso à AWS
+      markdown.py        #   slug, front matter, texto para a busca
+      merge3.py          #   mesclagem de três vias (como o git merge)
+      semver.py          #   versões x.y.z
+      specs.py           #   detecção e metadados de OpenAPI/AsyncAPI
+      tree.py            #   árvore a partir da lista de páginas
+      seo.py             #   tags de prévia de links (Open Graph)
+    seed_content/        # páginas de exemplo
+  tests/                 # pytest + moto
+  e2e_server.py          # backend descartável dos testes de ponta a ponta
 frontend/
   src/
-    components/ui/     # shadcn/ui (Radix)
-    components/docs/   # árvore, busca, sumário
-    components/admin/  # editor, doctree DnD, importação, histórico
-    components/markdown/ # renderer, Mermaid, alertas
-    pages/             # docs, login, admin
-Dockerfile · docker-compose.yml · .env.example
+    pages/               # telas: docs (leitura), admin (Studio), login
+    components/
+      ui/                # shadcn/ui (Radix) e diálogo de confirmação
+      common/            # usados nas duas áreas: marca, busca (⌘K), ícones, tema
+      docs/              # navegação, sumário, progresso de leitura
+      markdown/          # renderer, Mermaid, alertas, prévia de links
+      api/               # referência interativa OpenAPI/AsyncAPI
+      admin/
+        editor/          # editor da página: CodeMirror, comandos "/", inspetor, histórico
+        reviews/         # diff e resolução de conflitos
+        tree/            # árvore de páginas, criar, mover, importar
+    hooks/               # sessão, tema, atalhos, gravação local do rascunho
+    lib/
+      api.ts             # tipos e cliente da API
+      drafts/            # rascunhos neste navegador e situação das páginas
+      reviews/           # rótulos das revisões e diff de linhas
+      content/           # ícones, modelos, trechos e tipografia
+  e2e/                   # testes de ponta a ponta (Playwright)
+deploy/ · scripts/ · Dockerfile · docker-compose.yml · .env.example
 ```

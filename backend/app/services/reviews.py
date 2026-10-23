@@ -12,13 +12,13 @@ import uuid
 
 from fastapi import HTTPException, status
 
-from .config import Settings
-from .merge3 import MergeResult, merge3
-from .schemas import PageUpdate, ReviewInput, ReviewItemInput, ReviewMerge, User
-from .semver import bump_semver, is_greater
-from .service import DocsService, not_found
-from .storage import utcnow
-from .tree import build_tree, flatten
+from ..config import Settings
+from ..lib.merge3 import MergeResult, merge3
+from ..lib.semver import bump_semver, is_greater
+from ..lib.tree import build_tree, flatten
+from ..schemas import PageUpdate, ReviewInput, ReviewItemInput, ReviewMerge, User
+from ..storage import utcnow
+from .docs import DocsService, not_found
 
 ACTIVE = ("open", "approved", "changes_requested")
 

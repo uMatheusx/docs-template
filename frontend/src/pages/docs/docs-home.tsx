@@ -2,7 +2,7 @@ import { ArrowRight, Search } from "lucide-react";
 import { motion } from "motion/react";
 import { Link } from "react-router";
 
-import { PageIcon } from "@/components/page-icon";
+import { PageIcon } from "@/components/common/page-icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { modKey } from "@/hooks/use-hotkey";
 import type { TreeNode } from "@/lib/api";

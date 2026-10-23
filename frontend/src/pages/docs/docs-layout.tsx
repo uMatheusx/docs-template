@@ -16,11 +16,11 @@ import { Link, Navigate, Outlet, useLocation, useNavigate, useOutletContext } fr
 import { toast } from "sonner";
 import useSWR from "swr";
 
-import { Brand } from "@/components/brand";
-import { CommandCenter, type CommandAction } from "@/components/command-center";
+import { Brand } from "@/components/common/brand";
+import { CommandCenter, type CommandAction } from "@/components/common/command-center";
 import { NavTree } from "@/components/docs/nav-tree";
 import { ShortcutsDialog } from "@/components/docs/shortcuts-dialog";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { ThemeToggle } from "@/components/common/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";

@@ -33,8 +33,8 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Skeleton } from "@/components/ui/skeleton";
 import { Hint } from "@/components/ui/tooltip";
 import { docsApi, keys, type HistoryEntry, type Page } from "@/lib/api";
-import { DiffView } from "@/components/admin/diff-view";
-import { collapseDiff, diffLines, diffStats } from "@/lib/diff";
+import { DiffView } from "@/components/admin/reviews/diff-view";
+import { collapseDiff, diffLines, diffStats } from "@/lib/reviews/diff";
 import { bumpSemver } from "@/lib/semver";
 import { cn, downloadText, formatBytes, formatDate, timeAgo } from "@/lib/utils";
 

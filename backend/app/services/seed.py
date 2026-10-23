@@ -3,10 +3,10 @@
 import logging
 from pathlib import Path
 
-from .service import DocsService
+from .docs import DocsService
 
 log = logging.getLogger(__name__)
-CONTENT_DIR = Path(__file__).parent / "seed_content"
+CONTENT_DIR = Path(__file__).parent.parent / "seed_content"
 
 # (arquivo, arquivo do pai)
 MANIFEST: list[tuple[str, str | None]] = [

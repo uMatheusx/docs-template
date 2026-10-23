@@ -3,8 +3,8 @@ import { motion } from "motion/react";
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 
-import { Logo } from "@/components/brand";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { Logo } from "@/components/common/brand";
+import { ThemeToggle } from "@/components/common/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

@@ -1,4 +1,4 @@
-from app.markdown_utils import fold
+from app.lib.markdown import fold
 
 from .conftest import apply_change, publish
 

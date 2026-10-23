@@ -27,7 +27,7 @@ import { Link, useBlocker, useNavigate } from "react-router";
 import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 
-import { insertText, replaceAll } from "@/components/admin/editor-commands";
+import { insertText, replaceAll } from "@/components/admin/editor/editor-commands";
 import {
   FILES_EVENT,
   type FilesEventDetail,
@@ -36,18 +36,18 @@ import {
   markdownExtensions,
   parseFrontmatter,
   yamlExtensions,
-} from "@/components/admin/editor-extensions";
-import { SaveButton, SaveState } from "@/components/admin/editor-status";
-import { EditorToolbar } from "@/components/admin/editor-toolbar";
-import { Inspector, type Draft } from "@/components/admin/inspector";
-import { SLASH_IMAGE_EVENT, setSlashAssets, setSlashPages } from "@/components/admin/slash-commands";
-import { MovePageDialog } from "@/components/admin/move-page-dialog";
-import { ReviewBanner } from "@/components/admin/review-banner";
-import { SaveTemplateDialog } from "@/components/admin/save-template-dialog";
-import { FIELDS, rebaseLocal, toDraft } from "@/lib/draft";
-import { ChangesDialog } from "@/components/admin/changes-dialog";
-import { VersionHistory } from "@/components/admin/version-history";
-import { clearLocal, readLocal, writeLocal, type LocalDraft } from "@/lib/local-drafts";
+} from "@/components/admin/editor/editor-extensions";
+import { SaveButton, SaveState } from "@/components/admin/editor/editor-status";
+import { EditorToolbar } from "@/components/admin/editor/editor-toolbar";
+import { Inspector } from "@/components/admin/editor/inspector";
+import { SLASH_IMAGE_EVENT, setSlashAssets, setSlashPages } from "@/components/admin/editor/slash-commands";
+import { MovePageDialog } from "@/components/admin/tree/move-page-dialog";
+import { ReviewBanner } from "@/components/admin/editor/review-banner";
+import { SaveTemplateDialog } from "@/components/admin/editor/save-template-dialog";
+import { FIELDS, rebaseLocal, toDraft, type Draft } from "@/lib/drafts/draft";
+import { ChangesDialog } from "@/components/admin/editor/changes-dialog";
+import { VersionHistory } from "@/components/admin/editor/version-history";
+import { clearLocal, readLocal, writeLocal, type LocalDraft } from "@/lib/drafts/local-drafts";
 import { flattenTree } from "@/lib/tree";
 import { ApiReference } from "@/components/api/api-reference";
 import { Markdown } from "@/components/markdown/markdown";

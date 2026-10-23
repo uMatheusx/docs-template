@@ -1,10 +1,10 @@
 import { useState } from "react";
 
-import { PageIcon } from "@/components/page-icon";
+import { PageIcon } from "@/components/common/page-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { PAGE_ICONS } from "@/lib/icons";
+import { PAGE_ICONS } from "@/lib/content/icons";
 import { cn } from "@/lib/utils";
 
 export function IconPicker({ value, onChange, id }: { value: string | null; onChange: (v: string | null) => void; id?: string }) {

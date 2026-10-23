@@ -4,10 +4,10 @@ import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 
-import { MovePageDialog } from "@/components/admin/move-page-dialog";
-import { PageEditor } from "@/components/admin/page-editor";
-import { TreeManager } from "@/components/admin/tree-manager";
-import { PageIcon } from "@/components/page-icon";
+import { MovePageDialog } from "@/components/admin/tree/move-page-dialog";
+import { PageEditor } from "@/components/admin/editor/page-editor";
+import { TreeManager } from "@/components/admin/tree/tree-manager";
+import { PageIcon } from "@/components/common/page-icon";
 import {
   AlertDialog,
   AlertDialogAction,

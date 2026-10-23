@@ -1,4 +1,4 @@
-import type { LocalSummary } from "@/lib/local-drafts";
+import type { LocalSummary } from "@/lib/drafts/local-drafts";
 
 /**
  * Situação de uma página, no estilo das letras do controle de versão do VS Code: uma letra colorida; o nome

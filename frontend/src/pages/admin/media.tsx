@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Hint } from "@/components/ui/tooltip";
-import { SPEC_HINT } from "@/lib/spec-hint";
+import { SPEC_HINT } from "@/lib/content/spec-hint";
 import { docsApi, keys, type Asset } from "@/lib/api";
 import { cn, formatBytes, normalize, timeAgo } from "@/lib/utils";
 

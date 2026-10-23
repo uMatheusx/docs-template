@@ -24,8 +24,8 @@ import { useState } from "react";
 import { Link } from "react-router";
 import useSWR from "swr";
 
-import { CountUp } from "@/components/count-up";
-import { PageIcon } from "@/components/page-icon";
+import { CountUp } from "@/components/common/count-up";
+import { PageIcon } from "@/components/common/page-icon";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";

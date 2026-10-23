@@ -3,8 +3,8 @@ import { motion } from "motion/react";
 import { useState } from "react";
 import { Link } from "react-router";
 
-import { PageIcon } from "@/components/page-icon";
-import { StatusLetter } from "@/components/status-letter";
+import { PageIcon } from "@/components/common/page-icon";
+import { StatusLetter } from "@/components/common/status-letter";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { TreeNode } from "@/lib/api";
 import { cn } from "@/lib/utils";

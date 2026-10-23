@@ -18,11 +18,11 @@ import { useState } from "react";
 import { Navigate, NavLink, Outlet, useLocation, useNavigate, useOutletContext } from "react-router";
 import useSWR from "swr";
 
-import { ImportDialog } from "@/components/admin/import-dialog";
-import { NewPageDialog } from "@/components/admin/new-page-dialog";
-import { Logo } from "@/components/brand";
-import { CommandCenter, type CommandAction } from "@/components/command-center";
-import { ThemeSegmented, ThemeToggle } from "@/components/theme-toggle";
+import { ImportDialog } from "@/components/admin/tree/import-dialog";
+import { NewPageDialog } from "@/components/admin/tree/new-page-dialog";
+import { Logo } from "@/components/common/brand";
+import { CommandCenter, type CommandAction } from "@/components/common/command-center";
+import { ThemeSegmented, ThemeToggle } from "@/components/common/theme-toggle";
 import {
   DropdownMenu,
   DropdownMenuContent,

@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from urllib.parse import unquote
 
-from .storage import Storage, utcnow
-from .tree import build_tree, flatten
+from ..lib.tree import build_tree, flatten
+from ..storage import Storage, utcnow
 
 LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 FENCE_RE = re.compile(r"^(```|~~~).*?^\1\s*$", re.M | re.S)

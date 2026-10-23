@@ -4,8 +4,8 @@ import { yaml } from "@codemirror/lang-yaml";
 import { languages } from "@codemirror/language-data";
 import { EditorView, keymap } from "@codemirror/view";
 
-import { wrapSelection } from "@/components/admin/editor-commands";
-import { slashCommands } from "@/components/admin/slash-commands";
+import { wrapSelection } from "@/components/admin/editor/editor-commands";
+import { slashCommands } from "@/components/admin/editor/slash-commands";
 
 /** Arquivos soltos ou colados no editor chegam ao componente por este evento (com a posição do drop). */
 export const FILES_EVENT = "ah:files";

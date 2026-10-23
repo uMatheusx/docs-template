@@ -2,7 +2,7 @@ import { Check, Type, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Switch } from "@/components/ui/switch";
-import { applyTypography, preloadPresets, PREVIEW_KEY, readTypography, TYPE_PRESETS, type TypeChoice } from "@/lib/typography";
+import { applyTypography, preloadPresets, PREVIEW_KEY, readTypography, TYPE_PRESETS, type TypeChoice } from "@/lib/content/typography";
 import { cn } from "@/lib/utils";
 
 /** Painel flutuante para comparar tipografias nas páginas reais (ativado com ?tipografia). */

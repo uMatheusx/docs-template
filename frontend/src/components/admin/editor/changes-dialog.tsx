@@ -1,11 +1,11 @@
 import { FileDiff, RotateCcw, Undo2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { DiffView } from "@/components/admin/diff-view";
-import type { Draft } from "@/components/admin/inspector";
+import { DiffView } from "@/components/admin/reviews/diff-view";
+import type { Draft } from "@/lib/drafts/draft";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { collapseDiff, diffLines, diffStats } from "@/lib/diff";
+import { collapseDiff, diffLines, diffStats } from "@/lib/reviews/diff";
 import { cn } from "@/lib/utils";
 
 /** Um ponto de comparação: a versão publicada, o último "Salvar" ou a proposta carregada. */

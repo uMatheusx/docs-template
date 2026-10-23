@@ -13,8 +13,8 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 
-import { PageIcon } from "@/components/page-icon";
-import { PageStatusLetters } from "@/components/status-letter";
+import { PageIcon } from "@/components/common/page-icon";
+import { PageStatusLetters } from "@/components/common/status-letter";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,9 +25,9 @@ import {
 import { Hint } from "@/components/ui/tooltip";
 import { useSession } from "@/hooks/use-session";
 import { docsApi, keys, type Review, type TreeNode } from "@/lib/api";
-import { useLocalDrafts } from "@/lib/local-drafts";
+import { useLocalDrafts } from "@/lib/drafts/local-drafts";
 import { findNode, isDescendant, siblingsOf } from "@/lib/tree";
-import { bodyFont } from "@/lib/typography";
+import { bodyFont } from "@/lib/content/typography";
 import { cn } from "@/lib/utils";
 
 type Position = "before" | "after" | "inside";

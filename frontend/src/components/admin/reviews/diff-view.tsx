@@ -1,6 +1,6 @@
 import { Check, GitCompareArrows } from "lucide-react";
 
-import type { DiffHunk } from "@/lib/diff";
+import type { DiffHunk } from "@/lib/reviews/diff";
 import { cn } from "@/lib/utils";
 
 /** Diff linha a linha com números de linha (antes / depois). */

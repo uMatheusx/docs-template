@@ -7,9 +7,9 @@ import uuid
 
 from fastapi import HTTPException, status
 
-from .schemas import TemplateCreate, User
-from .service import not_found
-from .storage import Storage, utcnow
+from ..schemas import TemplateCreate, User
+from ..storage import Storage, utcnow
+from .docs import not_found
 
 
 class TemplateService:

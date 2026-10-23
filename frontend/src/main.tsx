@@ -6,12 +6,12 @@ import { createBrowserRouter, Navigate } from "react-router";
 import { RouterProvider } from "react-router/dom";
 import { SWRConfig } from "swr";
 
-import { TypePreview } from "@/components/type-preview";
+import { TypePreview } from "@/components/common/type-preview";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { ApiError, fetcher } from "@/lib/api";
-import { applyTypography, PREVIEW_KEY, readTypography } from "@/lib/typography";
+import { applyTypography, PREVIEW_KEY, readTypography } from "@/lib/content/typography";
 import CurrentVersionRedirect from "@/pages/docs/current-redirect";
 import DocPage from "@/pages/docs/doc-page";
 import DocsHome from "@/pages/docs/docs-home";
