@@ -66,8 +66,8 @@ export interface HistoryEntry {
   id: string;
   author: string;
   size: number;
-  version: number | null;
-  semver: string | null;
+  version: number;
+  semver: string;
   note: string;
   /** quando esta versão foi escrita */
   created_at: string;
@@ -147,15 +147,12 @@ export interface ReviewEvent {
   at: string;
 }
 
-export interface Review {
-  id: string;
-  number: number;
+/** Uma página dentro de uma proposta: o que muda nela e a versão em que a mudança se baseia. */
+export interface ReviewItem {
   page_id: string;
   page_title: string;
   page_path: string;
   page_published: boolean;
-  title: string;
-  description: string;
   base_version: number;
   base_semver: string;
   bump: Bump;
@@ -163,14 +160,21 @@ export interface Review {
   semver: string | null;
   fields: ReviewFields;
   has_content: boolean;
+  merged_version: number | null;
+  merged_semver: string | null;
+}
+
+/** Proposta de alteração em uma ou várias páginas, revisada e aplicada junta (como um pull request). */
+export interface Review {
+  id: string;
+  number: number;
+  title: string;
+  description: string;
   status: ReviewStatus;
   author: string;
   created_at: string;
   updated_at: string;
-  merged_version: number | null;
-  merged_semver: string | null;
-  /** proposta que faz parte de um pacote (várias páginas revisadas juntas) */
-  batch_id: string | null;
+  items: ReviewItem[];
   events: ReviewEvent[];
 }
 
@@ -185,7 +189,7 @@ export interface MergeConflict {
   after: string;
 }
 
-/** Situação da proposta frente à página: current (sem mudanças), clean (combina sozinha), conflicts, unavailable. */
+/** Situação de uma página da proposta: current (sem mudanças), clean (combina sozinha), conflicts, unavailable. */
 export interface MergeInfo {
   state: "current" | "clean" | "conflicts" | "unavailable";
   base_version: number;
@@ -196,44 +200,7 @@ export interface MergeInfo {
   merged_content: string | null;
 }
 
-export interface BatchPage {
-  review_id: string;
-  page_id: string;
-  page_title: string;
-  page_path: string;
-  status: ReviewStatus;
-}
-
-/** Várias propostas, de páginas diferentes, revisadas e aplicadas juntas (como um pull request). */
-export interface Batch {
-  id: string;
-  number: number;
-  title: string;
-  description: string;
-  author: string;
-  status: ReviewStatus;
-  created_at: string;
-  updated_at: string;
-  pages: BatchPage[];
-  events: ReviewEvent[];
-}
-
-export interface BatchItemInput {
-  page_id: string;
-  content?: string;
-  fields?: ReviewFields;
-  base_version: number;
-  base_semver?: string;
-  bump?: Bump;
-}
-
-export interface BatchInput {
-  title: string;
-  description: string;
-  items: BatchItemInput[];
-}
-
-export interface ReviewDetail extends Review {
+export interface ReviewItemDetail extends ReviewItem {
   proposed_content: string;
   current_content: string;
   current_version: number;
@@ -248,13 +215,12 @@ export interface ReviewDetail extends Review {
   merge: MergeInfo | null;
 }
 
-export interface BatchDetail extends Batch {
-  reviews: ReviewDetail[];
+export interface ReviewDetail extends Omit<Review, "items"> {
+  items: ReviewItemDetail[];
 }
 
-export interface ReviewInput {
-  title: string;
-  description?: string;
+export interface ReviewItemInput {
+  page_id: string;
   content?: string;
   fields?: ReviewFields;
   base_version: number;
@@ -262,6 +228,12 @@ export interface ReviewInput {
   bump?: Bump;
   /** versão escolhida à mão, no lugar da recomendada */
   semver?: string;
+}
+
+export interface ReviewInput {
+  title: string;
+  description: string;
+  items: ReviewItemInput[];
 }
 
 // ---------------------------------------------------------------- modelos
@@ -333,8 +305,6 @@ export const keys = {
   reviews: (state: "active" | "done" | "all" = "active", pageId?: string) =>
     `/api/admin/reviews?state=${state}${pageId ? `&page_id=${pageId}` : ""}`,
   review: (id: string) => `/api/admin/reviews/${id}`,
-  batches: (state: "active" | "done" | "all" = "active") => `/api/admin/review-batches?state=${state}`,
-  batch: (id: string) => `/api/admin/review-batches/${id}`,
   pageByPath: (path: string) => `/api/pages/by-path?path=${encodeURIComponent(path)}`,
   redirect: (path: string) => `/api/redirects?path=${encodeURIComponent(path)}`,
   adminPage: (id: string) => `/api/admin/pages/${id}`,
@@ -371,30 +341,23 @@ export const docsApi = {
   deleteAsset: (asset: Asset) => api<void>(`/api/admin/assets/${asset.id}/${asset.name}`, { method: "DELETE" }),
 
   // revisões
-  submitReview: (pageId: string, input: ReviewInput) =>
-    api<Review>(`/api/admin/pages/${pageId}/reviews`, { method: "POST", json: input }),
+  submitReview: (input: ReviewInput) => api<Review>("/api/admin/reviews", { method: "POST", json: input }),
   commentReview: (id: string, body: string) =>
     api<Review>(`/api/admin/reviews/${id}/comments`, { method: "POST", json: { body } }),
   approveReview: (id: string, body = "") => api<Review>(`/api/admin/reviews/${id}/approve`, { method: "POST", json: { body } }),
   requestChanges: (id: string, body: string) =>
     api<Review>(`/api/admin/reviews/${id}/request-changes`, { method: "POST", json: { body } }),
-  mergeReview: (id: string, options: { force?: boolean; resolutions?: MergeChoice[]; semver?: string } = {}) =>
+  /** `resolutions` e `semver` são por página (id da página → escolhas) */
+  mergeReview: (
+    id: string,
+    options: { force?: boolean; resolutions?: Record<string, MergeChoice[]>; semver?: Record<string, string> } = {},
+  ) =>
     api<Review>(`/api/admin/reviews/${id}/merge`, {
       method: "POST",
       json: { force: options.force ?? false, resolutions: options.resolutions, semver: options.semver },
     }),
   closeReview: (id: string) => api<Review>(`/api/admin/reviews/${id}/close`, { method: "POST" }),
 
-  // pacotes (várias páginas na mesma revisão)
-  submitBatch: (input: BatchInput) => api<Batch>("/api/admin/review-batches", { method: "POST", json: input }),
-  commentBatch: (id: string, body: string) =>
-    api<Batch>(`/api/admin/review-batches/${id}/comments`, { method: "POST", json: { body } }),
-  approveBatch: (id: string, body = "") =>
-    api<Batch>(`/api/admin/review-batches/${id}/approve`, { method: "POST", json: { body } }),
-  requestBatchChanges: (id: string, body: string) =>
-    api<Batch>(`/api/admin/review-batches/${id}/request-changes`, { method: "POST", json: { body } }),
-  mergeBatch: (id: string) => api<Batch>(`/api/admin/review-batches/${id}/merge`, { method: "POST" }),
-  closeBatch: (id: string) => api<Batch>(`/api/admin/review-batches/${id}/close`, { method: "POST" }),
 
   // modelos
   createTemplate: (input: Omit<Template, "id" | "created_by" | "created_at">) =>

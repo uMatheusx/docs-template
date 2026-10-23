@@ -16,7 +16,7 @@ Entre em `/admin`, selecione a página na árvore e use o editor com pré-visual
 
 ## Posso restaurar uma versão anterior?
 
-Sim. Cada salvamento arquiva a versão anterior no S3. Use a aba **Histórico** no editor.
+Sim. Cada versão publicada guarda o texto anterior no histórico. Use a aba **Histórico** no editor.
 
 ## Como esconder uma página?
 

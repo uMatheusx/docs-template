@@ -1,12 +1,7 @@
-import { json } from "@codemirror/lang-json";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { yaml } from "@codemirror/lang-yaml";
-import { languages } from "@codemirror/language-data";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
 import CodeMirror from "@uiw/react-codemirror";
 import {
-  Check,
   Columns2,
   CopyPlus,
   Download,
@@ -17,48 +12,47 @@ import {
   GitPullRequest,
   History,
   LayoutTemplate,
-  Loader2,
   MoreHorizontal,
   PanelRightClose,
   PanelRightOpen,
   PencilLine,
   FileDiff,
   RotateCcw,
-  Save,
   Trash2,
   Undo2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { Link, useBlocker, useNavigate } from "react-router";
 import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 
-import { insertText, replaceAll, wrapSelection } from "@/components/admin/editor-commands";
+import { insertText, replaceAll } from "@/components/admin/editor-commands";
+import {
+  FILES_EVENT,
+  type FilesEventDetail,
+  isJsonText,
+  jsonExtensions,
+  markdownExtensions,
+  parseFrontmatter,
+  yamlExtensions,
+} from "@/components/admin/editor-extensions";
+import { SaveButton, SaveState } from "@/components/admin/editor-status";
 import { EditorToolbar } from "@/components/admin/editor-toolbar";
 import { Inspector, type Draft } from "@/components/admin/inspector";
-import { SLASH_IMAGE_EVENT, setSlashAssets, setSlashPages, slashCommands } from "@/components/admin/slash-commands";
+import { SLASH_IMAGE_EVENT, setSlashAssets, setSlashPages } from "@/components/admin/slash-commands";
 import { MovePageDialog } from "@/components/admin/move-page-dialog";
+import { ReviewBanner } from "@/components/admin/review-banner";
 import { SaveTemplateDialog } from "@/components/admin/save-template-dialog";
 import { FIELDS, rebaseLocal, toDraft } from "@/lib/draft";
 import { ChangesDialog } from "@/components/admin/changes-dialog";
 import { VersionHistory } from "@/components/admin/version-history";
 import { clearLocal, readLocal, writeLocal, type LocalDraft } from "@/lib/local-drafts";
 import { flattenTree } from "@/lib/tree";
-import { legacySemver } from "@/lib/semver";
 import { ApiReference } from "@/components/api/api-reference";
 import { Markdown } from "@/components/markdown/markdown";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,10 +67,10 @@ import { Hint } from "@/components/ui/tooltip";
 import { modKey, useModHotkey } from "@/hooks/use-hotkey";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useSession } from "@/hooks/use-session";
+import { useLocalDraftSync } from "@/hooks/use-local-draft-sync";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useTheme } from "@/hooks/use-theme";
 import { ApiError, api, docsApi, keys, type Asset, type Page, type PageInput, type Review, type ReviewDetail } from "@/lib/api";
-import { REVIEW_STATUS } from "@/lib/reviews";
 import { cn, countWords, downloadText, readingTime } from "@/lib/utils";
 import { useAdmin } from "@/pages/admin/admin-layout";
 
@@ -88,8 +82,6 @@ const MODES: { id: Mode; label: string; icon: typeof Eye }[] = [
 ];
 const MD_FILE = /\.(md|markdown|mdx|txt)$/i;
 const SPEC_FILE = /\.(ya?ml|json)$/i;
-const FILES_EVENT = "ah:files";
-type FilesEventDetail = { files: File[]; pos?: number };
 
 /** O que já está guardado fora do editor: uma proposta carregada ou um "Salvar" local. */
 interface Persisted {
@@ -105,53 +97,6 @@ function readLocalDraft(page: Page): LocalDraft | null {
   const base = toDraft(page);
   return FIELDS.some((f) => local.draft[f] !== base[f]) ? local : null;
 }
-
-function parseFrontmatter(text: string): { meta: Record<string, string>; body: string } {
-  const match = text.match(/^\uFEFF?---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/);
-  if (!match) return { meta: {}, body: text };
-  const meta: Record<string, string> = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const i = line.indexOf(":");
-    if (i > 0) meta[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim().replace(/^["']|["']$/g, "");
-  }
-  return { meta, body: text.slice(match[0].length).replace(/^\n+/, "") };
-}
-
-function emitFiles(view: EditorView, files: File[], pos?: number) {
-  view.dom.dispatchEvent(new CustomEvent<FilesEventDetail>(FILES_EVENT, { detail: { files, pos } }));
-}
-
-const fileHandlers = EditorView.domEventHandlers({
-    drop(event, view) {
-      const files = Array.from(event.dataTransfer?.files ?? []);
-      if (!files.length) return false;
-      event.preventDefault();
-      emitFiles(view, files, view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? undefined);
-      return true;
-    },
-    paste(event, view) {
-      const files = Array.from(event.clipboardData?.files ?? []);
-      if (!files.length) return false;
-      event.preventDefault();
-      emitFiles(view, files);
-      return true;
-    },
-});
-
-const editorExtensions = [
-  markdown({ base: markdownLanguage, codeLanguages: languages }),
-  EditorView.lineWrapping,
-  slashCommands,
-  keymap.of([
-    { key: "Mod-b", run: (v) => (wrapSelection(v, "**"), true) },
-    { key: "Mod-i", run: (v) => (wrapSelection(v, "*"), true) },
-  ]),
-  fileHandlers,
-];
-// especificações OpenAPI/AsyncAPI: sem toolbar nem comandos "/" de markdown
-const yamlExtensions = [yaml(), EditorView.lineWrapping, fileHandlers];
-const jsonExtensions = [json(), EditorView.lineWrapping, fileHandlers];
-const isJsonText = (text: string) => text.trimStart().startsWith("{");
 
 interface PageEditorProps {
   page: Page;
@@ -170,7 +115,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
     stored
       ? {
           version: stored.baseVersion,
-          semver: stored.baseSemver ?? legacySemver(stored.baseVersion),
+          semver: stored.baseSemver ?? "",
           fields: stored.baseDraft ?? toDraft(page),
         }
       : { version: page.version, semver: page.semver, fields: toDraft(page) },
@@ -179,8 +124,6 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const [persisted, setPersisted] = useState<Persisted | null>(() =>
     stored?.explicit ? { kind: "local", snapshot: rebaseLocal(stored, page) } : null,
   );
-  // o navegador recusou guardar (cheio/bloqueado): sem rede de segurança, sair da página volta a pedir confirmação
-  const [localFailed, setLocalFailed] = useState(false);
   // mover a página na árvore chega pela prop: sincroniza caminho/pai sem perder o rascunho
   const [syncedPage, setSyncedPage] = useState(page);
   if (page !== syncedPage) {
@@ -248,44 +191,14 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
   // ------------------------------------------------------------ rascunho local (automático e "Salvar")
-  // sempre o estado mais recente, para gravar no último instante (ao sair da página ou fechar a aba)
-  const latest = useRef({ draft, dirty, unsaved, persisted, origin });
-  useEffect(() => {
-    latest.current = { draft, dirty, unsaved, persisted, origin };
+  // o navegador recusou guardar (cheio/bloqueado): sem rede de segurança, sair da página volta a pedir confirmação
+  const { failed: localFailed, setFailed: setLocalFailed } = useLocalDraftSync(baseline.id, {
+    draft,
+    dirty,
+    unsaved,
+    persistedKind: persisted?.kind ?? null,
+    origin,
   });
-  const pageId = baseline.id;
-  const flushLocal = useCallback(() => {
-    const now = latest.current;
-    // "Salvar" local: guarda enquanto houver diferença para a página; o resto só enquanto não estiver guardado
-    const keep = now.persisted?.kind === "local" ? now.dirty : now.unsaved;
-    if (!keep) {
-      clearLocal(pageId);
-      setLocalFailed(false);
-      return;
-    }
-    const result = writeLocal(pageId, {
-      draft: now.draft,
-      savedAt: new Date().toISOString(),
-      baseVersion: now.origin.version,
-      baseSemver: now.origin.semver,
-      baseDraft: now.origin.fields,
-      explicit: now.persisted?.kind === "local" && !now.unsaved,
-    });
-    setLocalFailed(result !== "ok");
-  }, [pageId]);
-
-  useEffect(() => {
-    const timer = setTimeout(flushLocal, 400);
-    return () => clearTimeout(timer);
-  }, [draft, dirty, unsaved, persisted, origin, flushLocal]);
-
-  useEffect(() => {
-    window.addEventListener("pagehide", flushLocal);
-    return () => {
-      window.removeEventListener("pagehide", flushLocal);
-      flushLocal(); // saindo da página: grava o que ainda estava no intervalo de espera
-    };
-  }, [flushLocal]);
 
   // ------------------------------------------------------------ salvar
   async function refreshCaches(saved: Page) {
@@ -389,19 +302,21 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
   async function loadProposal(review: Review) {
     try {
       const detail = await api<ReviewDetail>(keys.review(review.id));
+      const item = detail.items.find((i) => i.page_id === baseline.id);
+      if (!item) throw new Error("A proposta não altera mais esta página.");
       // só o que a proposta altera (a API devolve null no resto). Em rascunho, "publicar" não é um campo do
       // editor (vai pelo botão Pedir publicação); em página publicada, voltar a rascunho é.
       const fields = Object.fromEntries(
-        Object.entries(detail.fields).filter(([key, value]) => value != null && (key !== "published" || baseline.published)),
+        Object.entries(item.fields).filter(([key, value]) => value != null && (key !== "published" || baseline.published)),
       ) as Partial<Draft>;
       const next: Draft = {
         ...toDraft(baseline),
         ...fields,
-        content: detail.has_content ? detail.proposed_content : baseline.content,
+        content: item.has_content ? item.proposed_content : baseline.content,
       };
       setDraft(next);
       setPersisted({ kind: "proposal", number: review.number, snapshot: next });
-      setOrigin({ version: detail.base_version, semver: detail.base_semver, fields: toDraft(baseline) });
+      setOrigin({ version: item.base_version, semver: item.base_semver, fields: toDraft(baseline) });
       toast.success(`Proposta #${review.number} carregada no editor`, { description: "Envie de novo para atualizar a proposta." });
     } catch (err) {
       toast.error("Não foi possível carregar a proposta", { description: (err as Error).message });
@@ -685,48 +600,14 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         </div>
       </header>
 
-      {(reviewOnly || (pageReviews?.length ?? 0) > 0) && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-sky-500/[0.07] px-5 py-2 text-sm">
-          <GitPullRequest className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
-          {myReview ? (
-            <>
-              <span className="font-semibold">
-                Sua proposta #{myReview.number} “{myReview.title}” está {REVIEW_STATUS[myReview.status].label.toLowerCase()}.
-              </span>
-              <span className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => requestLoadProposal(myReview)}>
-                  Carregar no editor
-                </Button>
-                <Button asChild size="sm" variant="ghost">
-                  <Link to={`/admin/reviews/${myReview.id}`}>Abrir proposta</Link>
-                </Button>
-              </span>
-            </>
-          ) : (
-            reviewOnly && <span className="font-semibold">Página publicada: suas alterações viram uma proposta que um administrador revisa.</span>
-          )}
-          {reviewOnly && origin.version !== baseline.version && (
-            <span className="text-xs text-muted-foreground">
-              Seu rascunho foi feito sobre a versão {origin.semver}; a página já está na {baseline.semver}. As mudanças se combinam quando a
-              proposta for aplicada.
-            </span>
-          )}
-          {otherReviews.length > 0 && (
-            <span className="ml-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              {otherReviews.length === 1 ? "1 proposta aberta" : `${otherReviews.length} propostas abertas`} nesta página:
-              {otherReviews.slice(0, 3).map((r) => (
-                <Link
-                  key={r.id}
-                  to={`/admin/reviews/${r.id}`}
-                  className="rounded-full border bg-background px-2 py-0.5 font-semibold text-foreground hover:border-brand/40"
-                >
-                  #{r.number} · {r.author}
-                </Link>
-              ))}
-            </span>
-          )}
-        </div>
-      )}
+      <ReviewBanner
+        mine={myReview}
+        others={otherReviews}
+        reviewOnly={reviewOnly}
+        origin={origin}
+        current={{ version: baseline.version, semver: baseline.semver }}
+        onLoad={requestLoadProposal}
+      />
 
       {/* ------------------------------------------------ corpo */}
       <div className="flex min-h-0 flex-1">
@@ -744,7 +625,7 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
                   value={draft.content}
                   onChange={(value) => set("content", value)}
                   onCreateEditor={(v) => setView(v)}
-                  extensions={isSpec ? (specJson ? jsonExtensions : yamlExtensions) : editorExtensions}
+                  extensions={isSpec ? (specJson ? jsonExtensions : yamlExtensions) : markdownExtensions}
                   theme={resolved === "dark" ? githubDark : githubLight}
                   height="100%"
                   basicSetup={{ foldGutter: true, highlightActiveLine: true, searchKeymap: true, autocompletion: false }}
@@ -890,30 +771,25 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         source={{ title: draft.title, icon: draft.icon, kind, content: draft.content }}
       />
 
-      <AlertDialog open={confirmLoad !== null} onOpenChange={(open) => !open && setConfirmLoad(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Carregar a proposta #{confirmLoad?.number} no editor?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tudo que está no editor agora será substituído pelo conteúdo da proposta.
-              {persisted?.kind === "local" ? " Isso inclui o que você salvou neste navegador." : ""}
-              {unsaved ? " As alterações ainda não salvas serão perdidas." : ""} Isso não pode ser desfeito.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Manter o que está no editor</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                const review = confirmLoad;
-                setConfirmLoad(null);
-                if (review) void loadProposal(review);
-              }}
-            >
-              Substituir e carregar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmLoad !== null}
+        onOpenChange={(open) => !open && setConfirmLoad(null)}
+        title={`Carregar a proposta #${confirmLoad?.number} no editor?`}
+        description={
+          <>
+            Tudo que está no editor agora será substituído pelo conteúdo da proposta.
+            {persisted?.kind === "local" ? " Isso inclui o que você salvou neste navegador." : ""}
+            {unsaved ? " As alterações ainda não salvas serão perdidas." : ""} Isso não pode ser desfeito.
+          </>
+        }
+        cancel="Manter o que está no editor"
+        confirm="Substituir e carregar"
+        onConfirm={() => {
+          const review = confirmLoad;
+          setConfirmLoad(null);
+          if (review) void loadProposal(review);
+        }}
+      />
 
       <ChangesDialog
         open={changesOpen}
@@ -943,165 +819,47 @@ export function PageEditor({ page, onDelete }: PageEditorProps) {
         }}
       />
 
-      <AlertDialog open={confirmRestore} onOpenChange={setConfirmRestore}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {persisted?.kind === "proposal" ? `Voltar à proposta #${persisted.number}?` : "Restaurar o último salvo?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {persisted?.kind === "proposal"
-                ? "O editor volta ao texto da proposta carregada."
-                : "O editor volta ao que você salvou neste navegador."}{" "}
-              As alterações feitas depois ({beyondPersisted.length}) serão perdidas. Isso não pode ser desfeito.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Manter o que está no editor</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (persisted) setDraft(persisted.snapshot);
-                toast.success(persisted?.kind === "proposal" ? "Voltou à proposta" : "Restaurado ao último salvo");
-              }}
-            >
-              Restaurar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmRestore}
+        onOpenChange={setConfirmRestore}
+        title={persisted?.kind === "proposal" ? `Voltar à proposta #${persisted.number}?` : "Restaurar o último salvo?"}
+        description={
+          <>
+            {persisted?.kind === "proposal" ? "O editor volta ao texto da proposta carregada." : "O editor volta ao que você salvou neste navegador."}{" "}
+            As alterações feitas depois ({beyondPersisted.length}) serão perdidas. Isso não pode ser desfeito.
+          </>
+        }
+        cancel="Manter o que está no editor"
+        confirm="Restaurar"
+        onConfirm={() => {
+          if (persisted) setDraft(persisted.snapshot);
+          toast.success(persisted?.kind === "proposal" ? "Voltou à proposta" : "Restaurado ao último salvo");
+        }}
+      />
 
-      <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Descartar as alterações?</AlertDialogTitle>
-            <AlertDialogDescription>
-              O editor volta ao que está na página (versão {baseline.semver}). O que você escreveu aqui e o que foi guardado neste
-              navegador serão apagados. Isso não pode ser desfeito.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Manter as alterações</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                reset(baseline);
-                clearLocal(baseline.id);
-                toast.success("Alterações descartadas");
-              }}
-            >
-              Descartar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        title="Descartar as alterações?"
+        description={`O editor volta ao que está na página (versão ${baseline.semver}). O que você escreveu aqui e o que foi guardado neste navegador serão apagados. Isso não pode ser desfeito.`}
+        cancel="Manter as alterações"
+        confirm="Descartar"
+        onConfirm={() => {
+          reset(baseline);
+          clearLocal(baseline.id);
+          toast.success("Alterações descartadas");
+        }}
+      />
 
-      <AlertDialog open={blocker.state === "blocked"}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Sair sem salvar?</AlertDialogTitle>
-            <AlertDialogDescription>
-              O navegador não conseguiu guardar as alterações que ainda não foram salvas. Se sair agora, elas serão perdidas.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => blocker.reset?.()}>Continuar editando</AlertDialogCancel>
-            <AlertDialogAction onClick={() => blocker.proceed?.()}>Sair mesmo assim</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
-}
-
-function SaveState({
-  saving,
-  dirty,
-  changed,
-  version,
-  persisted,
-}: {
-  saving: boolean;
-  dirty: boolean;
-  changed: number;
-  version: string;
-  /** o que já está guardado fora do editor: uma proposta carregada ou um "Salvar" local */
-  persisted?: { kind: "proposal" | "local"; number?: number };
-}) {
-  const proposal = persisted?.kind === "proposal" ? persisted.number : undefined;
-  const state = saving ? "saving" : dirty ? "dirty" : persisted?.kind === "local" ? "local" : proposal ? "proposal" : "saved";
-  return (
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.span
-        key={state}
-        initial={{ opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -4 }}
-        transition={{ duration: 0.15 }}
-        className={cn(
-          "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold",
-          state === "saved" && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-          state === "dirty" && "bg-brand/10 text-brand-ink",
-          state === "local" && "bg-sky-500/10 text-sky-700 dark:text-sky-300",
-          state === "proposal" && "bg-violet-500/10 text-violet-700 dark:text-violet-300",
-          state === "saving" && "bg-muted text-muted-foreground",
-        )}
-      >
-        {state === "saving" && <Loader2 className="h-3 w-3 animate-spin" />}
-        {state === "dirty" && <span aria-hidden className="font-mono text-[11px] font-bold leading-none">M</span>}
-        {state === "saved" && <Check className="h-3 w-3" />}
-        {state === "proposal" && <span aria-hidden className="font-mono text-[11px] font-bold leading-none">E</span>}
-        {state === "local" && <span aria-hidden className="font-mono text-[11px] font-bold leading-none">S</span>}
-        {state === "saving"
-          ? "Salvando…"
-          : state === "dirty"
-            ? proposal
-              ? `${changed} alteração(ões) além da proposta #${proposal}`
-              : persisted?.kind === "local"
-                ? `${changed} alteração(ões) além do que foi salvo`
-                : `${changed} alteração(ões) não salva(s)`
-            : state === "local"
-              ? "Salvo neste navegador · não enviado"
-              : state === "proposal"
-                ? `Proposta #${proposal} carregada`
-                : `Salvo · ${version}`}
-      </motion.span>
-    </AnimatePresence>
-  );
-}
-
-/**
- * Salvar à esquerda, enviar à direita, igual em página publicada e em rascunho.
- * Publicada: Salvar guarda neste navegador. Rascunho: Salvar grava no servidor (só a última versão, sem histórico).
- * Em ambos o envio vai para a tela Alterações e só vale para o que já foi salvo.
- */
-function SaveButton({
-  dirty,
-  unsaved,
-  saving,
-  onSave,
-  reviewOnly,
-  onReview,
-}: {
-  /** há diferença para a página */
-  dirty: boolean;
-  /** há diferença que ainda não foi guardada em lugar nenhum */
-  unsaved: boolean;
-  saving: boolean;
-  onSave: (note?: string) => Promise<boolean>;
-  reviewOnly: boolean;
-  onReview: () => void;
-}) {
-  const sendLabel = reviewOnly ? "Enviar para revisão" : "Pedir publicação";
-  return (
-    <div className="flex items-center gap-2">
-      <Button variant="secondary" onClick={() => onSave()} disabled={!unsaved || saving}>
-        {saving && !reviewOnly ? <Loader2 className="animate-spin" /> : <Save />} Salvar
-        <kbd className="ml-0.5 hidden lg:inline-flex">{modKey} S</kbd>
-      </Button>
-      <span title={unsaved ? `Salve antes de ${reviewOnly ? "enviar para revisão" : "pedir a publicação"}` : undefined}>
-        <Button onClick={onReview} disabled={(reviewOnly && !dirty) || unsaved || saving}>
-          <GitPullRequest /> {sendLabel}
-        </Button>
-      </span>
+      <ConfirmDialog
+        open={blocker.state === "blocked"}
+        title="Sair sem salvar?"
+        description="O navegador não conseguiu guardar as alterações que ainda não foram salvas. Se sair agora, elas serão perdidas."
+        cancel="Continuar editando"
+        confirm="Sair mesmo assim"
+        onCancel={() => blocker.reset?.()}
+        onConfirm={() => blocker.proceed?.()}
+      />
     </div>
   );
 }

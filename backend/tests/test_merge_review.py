@@ -1,4 +1,5 @@
 from .conftest import apply_change, find, login
+from .conftest import propose as open_proposal
 
 BASE = "# Guia\n\nIntrodução.\n\nPasso um.\n\nPasso dois.\n\nPasso três.\n\nConclusão.\n"
 
@@ -9,24 +10,16 @@ def make_page(admin):
     return apply_change(admin, created["id"], fields={"published": True})
 
 
-def propose(client, page, content, title="Proposta"):
-    resp = client.post(
-        f"/api/admin/pages/{page['id']}/reviews",
-        json={
-            "title": title,
-            "description": "Mudança de teste.",
-            "content": content,
-            "base_version": page["version"],
-        },
-    )
+def propose(client, page, content):
+    resp = open_proposal(client, page, content)
     assert resp.status_code == 201, resp.text
     review = resp.json()
     assert client.post(f"/api/admin/reviews/{review['id']}/approve", json={}).status_code == 200
     return review
 
 
-def detail(client, review):
-    return client.get(f"/api/admin/reviews/{review['id']}").json()
+def merge_info(client, review):
+    return client.get(f"/api/admin/reviews/{review['id']}").json()["items"][0]["merge"]
 
 
 def content_of(client, page):
@@ -36,7 +29,7 @@ def content_of(client, page):
 def test_up_to_date_proposal_reports_current(admin):
     page = make_page(admin)
     review = propose(admin, page, BASE.replace("Passo um.", "Passo 1."))
-    info = detail(admin, review)["merge"]
+    info = merge_info(admin, review)
     assert info["state"] == "current" and info["conflicts"] == []
 
 
@@ -47,7 +40,7 @@ def test_changes_in_different_places_are_combined_automatically(admin):
     login(admin, "rui")
     apply_change(admin, page["id"], content=BASE.replace("Passo um.", "Passo 1, atualizado."))
 
-    info = detail(admin, mine)["merge"]
+    info = merge_info(admin, mine)
     assert info["state"] == "clean"
     assert "Passo 1, atualizado." in info["merged_content"] and "Conclusão revisada." in info["merged_content"]
 
@@ -65,7 +58,7 @@ def test_overlapping_changes_need_a_choice_per_conflict(admin):
     login(admin, "rui")
     apply_change(admin, page["id"], content=BASE.replace("Passo dois.", "Passo dois, versão da página."))
 
-    info = detail(admin, mine)["merge"]
+    info = merge_info(admin, mine)
     assert info["state"] == "conflicts" and len(info["conflicts"]) == 1
     conflict = info["conflicts"][0]
     assert conflict["ours"] == "Passo dois, versão da página.\n"
@@ -75,11 +68,11 @@ def test_overlapping_changes_need_a_choice_per_conflict(admin):
     url = f"/api/admin/reviews/{mine['id']}/merge"
     sem_escolha = admin.post(url, json={})
     assert sem_escolha.status_code == 409 and "escolha uma opção" in sem_escolha.json()["detail"]
-    assert admin.post(url, json={"resolutions": ["ours", "theirs"]}).status_code == 400
-    assert admin.post(url, json={"resolutions": ["nenhuma"]}).status_code == 422
+    assert admin.post(url, json={"resolutions": {page["id"]: ["ours", "theirs"]}}).status_code == 400
+    assert admin.post(url, json={"resolutions": {page["id"]: ["nenhuma"]}}).status_code == 422
     assert "versão da página" in content_of(admin, page)  # nada foi aplicado ainda
 
-    done = admin.post(url, json={"resolutions": ["both"]})
+    done = admin.post(url, json={"resolutions": {page["id"]: ["both"]}})
     assert done.status_code == 200
     text = content_of(admin, page)
     assert "Passo dois, versão da página.\nPasso dois, versão da proposta.\n" in text
@@ -94,7 +87,10 @@ def test_resolutions_keep_clean_parts_of_both_sides(admin):
     theirs = BASE.replace("Passo dois.", "Passo dois, página.").replace("Introdução.", "Intro nova.")
     apply_change(admin, page["id"], content=theirs)
 
-    assert admin.post(f"/api/admin/reviews/{mine['id']}/merge", json={"resolutions": ["theirs"]}).status_code == 200
+    assert (
+        admin.post(f"/api/admin/reviews/{mine['id']}/merge", json={"resolutions": {page["id"]: ["theirs"]}}).status_code
+        == 200
+    )
     text = content_of(admin, page)
     assert "Passo dois, proposta." in text  # conflito: escolhida a proposta
     assert "Intro nova." in text  # mudança só da página, preservada
@@ -119,7 +115,7 @@ def test_unavailable_base_falls_back_to_confirmation(admin, monkeypatch):
     apply_change(admin, page["id"], content=BASE.replace("Conclusão.", "Fim."))
     monkeypatch.setattr(admin.app.state.storage, "content_at_version", lambda *a, **k: None)
 
-    assert detail(admin, mine)["merge"]["state"] == "unavailable"
+    assert merge_info(admin, mine)["state"] == "unavailable"
     blocked = admin.post(f"/api/admin/reviews/{mine['id']}/merge", json={})
     assert blocked.status_code == 409 and "não foi possível combinar" in blocked.json()["detail"]
     assert admin.post(f"/api/admin/reviews/{mine['id']}/merge", json={"force": True}).status_code == 200

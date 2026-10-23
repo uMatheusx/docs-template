@@ -1,4 +1,4 @@
-"""Rotas do Studio: páginas, doctree, histórico, revisões, modelos, importação e mídia.
+"""Rotas do Studio: páginas, doctree, histórico, revisões, modelos, importação e arquivos.
 
 Editores acessam o Studio; operações que alteram o que está publicado exigem administrador.
 """
@@ -6,17 +6,13 @@ Editores acessam o Studio; operações que alteram o que está publicado exigem 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from ..auth import require_admin, require_editor
-from ..batches import BatchService
 from ..config import Settings, get_settings
-from ..deps import get_batches, get_reviews, get_service, get_storage, get_templates
+from ..deps import get_reviews, get_service, get_storage, get_templates
 from ..library import TemplateService
 from ..links import link_report
 from ..reviews import ReviewService
 from ..schemas import (
     Asset,
-    Batch,
-    BatchDetail,
-    BatchInput,
     HistoryContent,
     HistoryEntry,
     ImportUrlRequest,
@@ -106,10 +102,10 @@ def history(page_id: str, storage: Storage = Depends(get_storage)):
 
 @router.get("/pages/{page_id}/history/{version_id}", response_model=HistoryContent)
 def history_version(page_id: str, version_id: str, storage: Storage = Depends(get_storage)):
-    content = storage.get_history(page_id, version_id)
-    if content is None:
+    entry = storage.get_history(page_id, version_id)
+    if entry is None:
         raise not_found("Versão")
-    return {"id": version_id, "content": content}
+    return entry
 
 
 @router.post("/pages/{page_id}/history/{version_id}/restore", response_model=Page)
@@ -129,11 +125,11 @@ def list_reviews(
     return reviews.list(state, page_id)
 
 
-@router.post("/pages/{page_id}/reviews", response_model=Review, status_code=status.HTTP_201_CREATED)
+@router.post("/reviews", response_model=Review, status_code=status.HTTP_201_CREATED)
 def submit_review(
-    page_id: str, body: ReviewInput, user: User = Depends(require_editor), reviews: ReviewService = Depends(get_reviews)
+    body: ReviewInput, user: User = Depends(require_editor), reviews: ReviewService = Depends(get_reviews)
 ):
-    return reviews.submit(page_id, body, user)
+    return reviews.submit(body, user)
 
 
 @router.get("/reviews/{review_id}", response_model=ReviewDetail)
@@ -178,7 +174,7 @@ def merge_review(
     user: User = Depends(require_editor),
     reviews: ReviewService = Depends(get_reviews),
 ):
-    return reviews.merge(review_id, user, body.force, body.resolutions, body.semver)
+    return reviews.merge(review_id, user, body)
 
 
 @router.post("/reviews/{review_id}/close", response_model=Review)
@@ -222,9 +218,7 @@ async def import_files(
             text = data.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{file.filename} não é um arquivo UTF-8") from exc
-        created.append(
-            svc.import_file(file.filename or "importado.md", text, parent_id or None, user.username)
-        )
+        created.append(svc.import_file(file.filename or "importado.md", text, parent_id or None, user.username))
     return created
 
 
@@ -262,61 +256,3 @@ async def upload_asset(
 )
 def delete_asset(asset_id: str, filename: str, storage: Storage = Depends(get_storage)):
     storage.delete_asset(asset_id, filename)
-
-
-# ---------------------------------------------------------------- pacotes de revisão (várias páginas juntas)
-@router.get("/review-batches", response_model=list[Batch])
-def list_batches(
-    state: str = Query(default="active", pattern="^(active|done|all)$"), batches: BatchService = Depends(get_batches)
-):
-    return batches.list(state)
-
-
-@router.post("/review-batches", response_model=Batch, status_code=status.HTTP_201_CREATED)
-def create_batch(body: BatchInput, user: User = Depends(require_editor), batches: BatchService = Depends(get_batches)):
-    return batches.create(body, user)
-
-
-@router.get("/review-batches/{batch_id}", response_model=BatchDetail)
-def batch_detail(batch_id: str, batches: BatchService = Depends(get_batches)):
-    return batches.detail(batch_id)
-
-
-@router.post("/review-batches/{batch_id}/comments", response_model=Batch)
-def comment_batch(
-    batch_id: str,
-    body: ReviewComment,
-    user: User = Depends(require_editor),
-    batches: BatchService = Depends(get_batches),
-):
-    return batches.comment(batch_id, body.body, user)
-
-
-@router.post("/review-batches/{batch_id}/approve", response_model=Batch)
-def approve_batch(
-    batch_id: str,
-    body: ReviewDecision,
-    user: User = Depends(require_admin),
-    batches: BatchService = Depends(get_batches),
-):
-    return batches.approve(batch_id, body.body, user)
-
-
-@router.post("/review-batches/{batch_id}/request-changes", response_model=Batch)
-def request_batch_changes(
-    batch_id: str,
-    body: ReviewDecision,
-    user: User = Depends(require_admin),
-    batches: BatchService = Depends(get_batches),
-):
-    return batches.request_changes(batch_id, body.body, user)
-
-
-@router.post("/review-batches/{batch_id}/merge", response_model=Batch)
-def merge_batch(batch_id: str, user: User = Depends(require_admin), batches: BatchService = Depends(get_batches)):
-    return batches.merge(batch_id, user)
-
-
-@router.post("/review-batches/{batch_id}/close", response_model=Batch)
-def close_batch(batch_id: str, user: User = Depends(require_editor), batches: BatchService = Depends(get_batches)):
-    return batches.close(batch_id, user)

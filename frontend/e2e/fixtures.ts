@@ -41,13 +41,11 @@ export async function changeViaReview(
   change: { content?: string; fields?: Record<string, unknown> },
 ) {
   const page = await (await request.get(`/api/admin/pages/${pageId}`)).json();
-  const created = await request.post(`/api/admin/pages/${pageId}/reviews`, {
+  const created = await request.post("/api/admin/reviews", {
     data: {
       title: "Alteração de teste",
       description: "Feita pelo caminho de revisão.",
-      content: change.content ?? null,
-      fields: change.fields ?? {},
-      base_version: page.version,
+      items: [{ page_id: pageId, content: change.content ?? null, fields: change.fields ?? {}, base_version: page.version }],
     },
   });
   expect(created.ok(), await created.text()).toBeTruthy();

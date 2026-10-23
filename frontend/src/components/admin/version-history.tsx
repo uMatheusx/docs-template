@@ -43,9 +43,9 @@ const CURRENT = "current";
 interface Item {
   id: string;
   current: boolean;
-  version: number | null;
+  version: number;
   /** versão x.y.z */
-  semver: string | null;
+  semver: string;
   note: string;
   author: string;
   at: string;
@@ -103,12 +103,9 @@ function dayLabel(iso: string): string {
 }
 
 const timeOf = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-const versionLabel = (item: Item) =>
-  item.semver
-    ? item.semver
-    : new Date(item.at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const versionLabel = (item: Item) => item.semver;
 /** rótulo curto para o selo da linha do tempo */
-const versionBadge = (item: Item) => item.semver ?? "antiga";
+const versionBadge = versionLabel;
 
 function pendingNotice(pending: NonNullable<VersionHistoryProps["pending"]>) {
   if (pending.kind === "unsaved") return "Você tem alterações não salvas no editor. Elas não aparecem aqui até serem salvas e aplicadas.";
@@ -135,16 +132,14 @@ function HistoryBody({ page, pending, initialId, onRestored, reviewOnly, onUseVe
   const items: Item[] = useMemo(
     () => [
       { id: CURRENT, current: true, version: page.version, semver: page.semver, note: page.note, author: page.updated_by, at: page.updated_at },
-      ...(entries ?? []).map((e, i, all) => ({
+      ...(entries ?? []).map((e) => ({
         id: e.id,
         current: false,
         version: e.version,
         semver: e.semver,
         note: e.note,
         author: e.author,
-        // versões antigas não guardavam quando foram escritas: uma versão é escrita no momento
-        // em que a anterior é arquivada (fallback para a criação da página na mais antiga)
-        at: e.created_at !== e.archived_at ? e.created_at : (all[i + 1]?.archived_at ?? page.created_at),
+        at: e.created_at,
         size: e.size,
       })),
     ],

@@ -67,13 +67,17 @@ test("proposta defasada: trechos livres se combinam e o revisor resolve o confli
 
   // a editora propõe mudar o "Passo dois" e a "Conclusão", partindo da versão atual
   await loginAs(page, "editora");
-  const proposal = await page.request.post(`/api/admin/pages/${created.id}/reviews`, {
+  const proposal = await page.request.post("/api/admin/reviews", {
     data: {
       title: "Ajusta passo dois e conclusão",
       description: "Esclarece o passo dois e fecha o texto.",
-      content: BASE.replace("Passo dois.", "Passo dois, da proposta.").replace("Conclusão.", "Conclusão da proposta."),
-      fields: {},
-      base_version: published.version,
+      items: [
+        {
+          page_id: created.id,
+          content: BASE.replace("Passo dois.", "Passo dois, da proposta.").replace("Conclusão.", "Conclusão da proposta."),
+          base_version: published.version,
+        },
+      ],
     },
   });
   expect(proposal.ok(), await proposal.text()).toBeTruthy();
@@ -420,7 +424,7 @@ test("ver o diff local, comparar com o último Salvar e restaurar o último salv
   await page.getByRole("alertdialog").getByRole("button", { name: "Descartar" }).click();
 });
 
-test("várias páginas viram um pacote: uma revisão só, aprovada e aplicada junto", async ({ page }) => {
+test("várias páginas viram uma proposta só, aprovada e aplicada junto", async ({ page }) => {
   await loginAs(page, "admin");
   const guia = await findPage(page.request, "guia-de-escrita");
   const outra = await findPage(page.request, "arquitetura");
@@ -444,10 +448,10 @@ ${texto}`);
   await page.getByRole("checkbox", { name: "Selecionar Arquitetura" }).check();
   const enviar = page.getByRole("button", { name: /Enviar para revisão \(2\)/ });
   await expect(enviar).toBeDisabled(); // falta a descrição
-  await page.getByLabel(/Título do pacote/).fill("Duas páginas juntas");
+  await page.getByLabel(/Título da proposta/).fill("Duas páginas juntas");
   await page.getByLabel(/O que mudou e por quê/).fill("Atualiza o guia e a arquitetura.");
   await enviar.click();
-  await expect(page.getByText("Pacote com 2 páginas enviado para revisão")).toBeVisible();
+  await expect(page.getByText("Proposta com 2 páginas enviada para revisão")).toBeVisible();
 
   // em Revisões é um item só, com as duas páginas
   await page.goto("/admin/reviews");
@@ -455,21 +459,22 @@ ${texto}`);
   await expect(card).toHaveCount(1);
   await expect(card).toContainText("2 páginas");
   await card.click();
-  await expect(page).toHaveURL(/\/admin\/reviews\/lote\//);
+  await expect(page).toHaveURL(/\/admin\/reviews\/rev_/);
   await expect(page.getByRole("heading", { name: "Duas páginas juntas" })).toBeVisible();
+
+  // cada página tem o diff e a prévia
+  await page.getByRole("tab", { name: /Alterações/ }).click();
   await expect(page.getByText("Lote um.").first()).toBeVisible();
   await expect(page.getByText("Lote dois.").first()).toBeVisible();
-
-  // cada página tem o diff e a prévia, como numa proposta de uma página só
   await page.getByRole("tab", { name: "Visualizar" }).first().click();
   await expect(page.locator(".doc-prose").getByText(/Lote (um|dois)./)).toBeVisible();
 
   // não dá para aplicar antes de aprovar; aprovar vale para as duas
-  await expect(page.getByRole("button", { name: "Aplicar tudo" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Aplicar nas 2 páginas/ })).toHaveCount(0);
   await page.getByRole("tab", { name: /Conversa/ }).click();
-  await page.getByRole("button", { name: "Aprovar tudo" }).click();
-  await page.getByRole("button", { name: "Aplicar tudo" }).click();
-  await expect(page.getByText("Pacote aplicado")).toBeVisible();
+  await page.getByRole("button", { name: "Aprovar" }).click();
+  await page.getByRole("button", { name: /Aplicar nas 2 páginas/ }).click();
+  await expect(page.getByText("Proposta aplicada: 2 páginas atualizadas")).toBeVisible();
 
   for (const [id, texto] of [
     [guia.id, "Lote um."],

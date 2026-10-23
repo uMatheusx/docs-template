@@ -81,7 +81,7 @@ Identidade visual com a paleta Itaú: laranja `#EC7000` (marca e ações, com te
 - Imagens: `/Imagem`, botão, colar ou arrastar → upload para o S3
 - **Inspetor** (painel lateral; gaveta em telas menores): propriedades, estrutura (outline clicável + métricas do texto) e últimas versões
 - **Histórico de versões**: linha do tempo por dia com número da versão, autor e **descrição da alteração**; diff com números de linha ("vs. anterior" ou "vs. atual"), visualização renderizada, copiar/baixar e restaurar (cria uma nova versão, nada é apagado)
-- **Salvar com descrição** (como mensagem de commit) — gravada nos metadados do S3 junto da versão
+- **Salvar com descrição** (como mensagem de commit) — gravada junto da versão, no histórico
 - Mover para… (escolhendo o novo pai), duplicar página, desfazer/refazer na barra
 - **Recuperação de rascunho**: alterações não salvas ficam no navegador e são oferecidas de volta
 - Salvar com `Ctrl/⌘ S`, controle de concorrência otimista (409) e aviso ao sair
@@ -119,7 +119,7 @@ Sem filtro, a referência inteira é exibida. O trecho acompanha a especificaç�
 - **Ver alterações** (botão no topo ou menu `⋯`, e também dentro do formulário de revisão): diff do que está no editor, **antes de salvar e antes de enviar**. Alterna entre "desde a versão publicada" e, depois de um Salvar, "desde o último Salvar" (só o que veio depois). **Restaurar o último salvo…** volta o editor ao que foi salvo (ou à proposta carregada), sempre com confirmação; **Descartar tudo…** volta à versão publicada
 - **Salvar e Enviar para revisão**: dois botões. Salvar só guarda neste navegador (o rascunho fica até ser enviado ou descartado); Enviar para revisão abre a tela **Alterações**, a mesma para uma ou várias páginas. Em rascunho os botões são os mesmos (**Salvar** à esquerda, **Pedir publicação** à direita), mas Salvar grava no servidor e guarda só a última versão: não gera versão x.y.z nem entrada no histórico. O histórico começa quando a página é publicada.
 - **Alterações** (`/admin/changes`): a única tela de envio para revisão, para uma ou várias páginas. Lista compacta em dois grupos (páginas publicadas com rascunho salvo neste navegador, e rascunhos do servidor que pedem a publicação), cada linha com caixa de seleção, o que muda, o tamanho da mudança (correção, novidade, mudança grande), a versão resultante (`1.0.0 → 1.0.1`; a primeira publicação é sempre 1.0.0) e atalhos para ver o diff e abrir no editor. Seleção por grupo, filtro quando há muitas páginas e uma barra de envio fixa no rodapé com a descrição obrigatória. Cada página vira uma proposta. A chave Publicada/Rascunho só existe em página publicada (para tirar do ar).
-- **Pacote (várias páginas, como um pull request)**: ao enviar **mais de uma página** de uma vez, elas viram **um pacote**: um número (`#12`), um título e uma descrição, e aparecem como **um item só** em Revisões. A tela do pacote tem a aba **Páginas** (cada página com seu diff, expansível) e a aba **Conversa** (comentários e decisões do pacote). **Aprovar tudo**, **Pedir alterações**, **Fechar tudo** e **Aplicar tudo** valem para todas as páginas. **Aplicar é tudo ou nada**: antes de mexer em qualquer página, confere que todas estão aprovadas e que nenhuma tem conflito com mudanças feitas depois da proposta; se alguma tiver, nada é aplicado e a mensagem diz qual (a proposta daquela página abre para resolver os conflitos). Com uma página só, continua sendo uma proposta comum. Cada página do pacote é uma proposta comum por baixo (API: `/api/admin/review-batches`).
+- **Várias páginas na mesma proposta (como um pull request)**: a proposta tem uma ou várias páginas, com um número (`#12`), um título e uma descrição. A aba **Alterações** mostra cada página com seu diff e prévia (expansíveis) e a aba **Conversa**, os comentários e decisões. **Aprovar**, **Pedir alterações**, **Fechar** e **Aplicar** valem para a proposta inteira. **Aplicar é tudo ou nada**: antes de mexer em qualquer página, confere que nenhuma tem conflito sem resolver nem versão escolhida inválida; se alguma tiver, nada é aplicado e a mensagem diz qual. Os conflitos de cada página se resolvem na própria proposta. Reenviar uma página que já está numa proposta aberta sua atualiza essa página dentro dela (API: `POST /api/admin/reviews` com `items`).
 - Referências de API: `/` > **Referência OpenAPI** ou **AsyncAPI** lista as especificações existentes e insere o bloco já com o `ref:`. Dentro de um bloco ```` ```openapi ````/```` ```asyncapi ````, `ref:` sugere as especificações do tipo certo e as listas `operations:`, `tags:` e `channels:` sugerem o que existe na especificação apontada
 - Digite **`/`** no editor: o item **Link para página** mostra só as páginas da documentação e, conforme você digita (`/guia`), elas são filtradas por título ou endereço; Enter insere `[Título](/docs/endereço)`. As páginas também aparecem na lista geral de blocos, abaixo dos comandos. O antigo atalho "Link" virou **Link externo**
 
@@ -147,11 +147,11 @@ Sem filtro, a referência inteira é exibida. O trecho acompanha a especificaç�
 
 **Modelos de página**
 - Galeria ao criar página: em branco, guia passo a passo, runbook, ADR, notas de release, visão geral de serviço, FAQ, OpenAPI e AsyncAPI
-- “Salvar como modelo” a partir de qualquer página (guardado no S3); `{{title}}`, `{{date}}` e `{{author}}` são preenchidos na criação
+- “Salvar como modelo” a partir de qualquer página; `{{title}}`, `{{date}}` e `{{author}}` são preenchidos na criação
 
 **Busca**
 - Ignora acentos e maiúsculas ("autenticacao" encontra "Autenticação")
-- Índice em memória montado com um único Scan e reaproveitado entre buscas; gravações da própria instância o atualizam na hora e as de outras instâncias aparecem em até `SEARCH_CACHE_TTL_SECONDS` (padrão 60)
+- Índice em memória, montado de novo só quando alguma página muda (veja *Cache* abaixo)
 
 **Endereços antigos continuam funcionando**
 - Ao renomear o slug ou mover uma página, o endereço antigo (dela e de todas as subpáginas) passa a levar ao novo, mantendo a âncora `#seção`
@@ -169,19 +169,37 @@ Sem filtro, a referência inteira é exibida. O trecho acompanha a especificaç�
 ```mermaid
 flowchart LR
     UI[React SPA] -->|/api| API[FastAPI]
-    API -->|Scan / Get / Update| DDB[(DynamoDB<br/>tabela de páginas)]
-    API -->|Get / Put / Copy| S3[(S3)]
-    S3 --- C["pages/&lt;id&gt;/content.md"]
-    S3 --- H["pages/&lt;id&gt;/history/&lt;timestamp&gt;.md"]
+    API -->|Query / Get / transação| DDB[(DynamoDB<br/>pk + sk)]
+    API -->|Get / Put| S3[(S3)]
+    S3 --- C["pages/&lt;id&gt;/&lt;versão&gt;-&lt;sufixo&gt;.md<br/>(um objeto por texto, imutável)"]
+    S3 --- P["reviews/&lt;proposta&gt;/&lt;página&gt;.md"]
     S3 --- M["assets/&lt;uuid&gt;/&lt;arquivo&gt;"]
-    S3 --- P["pages/&lt;id&gt;/proposals/&lt;revisão&gt;.md"]
-    S3 --- T["templates/&lt;id&gt;.json"]
 ```
 
-Item do DynamoDB (chave `id`): `title`, `slug`, `parent_id`, `order`, `icon`, `description`, `published`,
-`version`, `kind` (`doc` | `openapi` | `asyncapi`), `created_at`, `updated_at`, `updated_by` e `search_text` (texto puro para a busca).
-Na mesma tabela ficam as propostas de revisão (`record = "review"`) e contadores (`record = "counter"`).
+Uma tabela com chave composta (`pk`, `sk`). Cada tipo de registro mora numa partição própria, então listar um tipo é
+uma `Query` com leitura consistente — nenhuma rota faz `Scan`:
+
+| `pk` | `sk` | o quê |
+|---|---|---|
+| `PAGE` | id da página | metadados (`title`, `slug`, `parent_id`, `order`, `published`, `version`, `semver`, `kind`…) e `text`: o texto atual (chave no S3, versão, autor, nota) |
+| `SEARCH` | id da página | texto puro para a busca |
+| `TEXT#<id>` | versão (10 dígitos) | um texto anterior da página (histórico de versões) |
+| `REVIEW` | id da proposta | proposta de revisão, com `items` (uma entrada por página) |
+| `REDIRECT` | endereço antigo | id da página que esteve nele |
+| `ASSET` | id do arquivo | nome, tamanho, tipo e se é contrato OpenAPI/AsyncAPI |
+| `TEMPLATE` | id do modelo | modelo de página |
+| `COUNTER` | nome | contadores atômicos (`reviews`; `tree`, a versão da árvore) |
+
+Gravar uma página envia o texto novo para um objeto próprio no S3 e só então aponta a página para ele, numa
+transação condicionada à versão esperada (que também registra o texto anterior no histórico e atualiza a busca).
+Se a transação falhar, o objeto novo é apagado: a página nunca fica com metadados de uma versão e texto de outra.
 A URL de cada página é derivada dos slugs dos ancestrais (`/docs/guias/autenticacao`).
+
+**Cache.** Toda gravação de página soma 1 ao contador `tree`. A árvore e o índice de busca ficam em memória com o
+valor do contador com que foram montados, e só são lidos de novo quando ele muda — conferido no máximo a cada
+`CACHE_TTL_SECONDS` (padrão 1), então mudanças de outras instâncias aparecem nesse intervalo, e as da própria, na hora.
+O mesmo contador vira o `ETag` de `/api/tree` e `/api/pages/*`: sem mudanças, o navegador recebe `304`.
+Toda resposta leva o tempo gasto no cabeçalho `Server-Timing`, e as que passam de `SLOW_REQUEST_MS` vão para o log.
 
 ## Formato dos arquivos `.md` importados
 
@@ -202,7 +220,7 @@ Sem front matter, o título vem do primeiro `# heading` ou do nome do arquivo.
 
 ## Produção (AWS)
 
-1. Crie a tabela (chave de partição `id` do tipo String, on-demand) e o bucket — ou suba uma vez com `AUTO_CREATE_RESOURCES=true`.
+1. Crie a tabela (chave de partição `pk` e de ordenação `sk`, ambas String, on-demand) e o bucket — ou suba uma vez com `AUTO_CREATE_RESOURCES=true`.
 2. Dê à role do container as permissões de [`deploy/iam-policy.json`](deploy/iam-policy.json).
 3. Rode a imagem com `DYNAMODB_ENDPOINT_URL` e `S3_ENDPOINT_URL` **vazios**, `COOKIE_SECURE=true`, `APP_ENV=production`, `ADMIN_PASSWORD` e `JWT_SECRET` fortes e `SEED_ON_STARTUP=false`. Com `APP_ENV=production` o backend se recusa a subir com senha ou segredo padrão ou fracos (senhas com menos de 12 caracteres, `JWT_SECRET` com menos de 32).
 
@@ -214,8 +232,8 @@ docker run -p 8000:8000 --env-file .env.prod accounthub-docs
 `PUBLIC_READ=false` exige login também para ler a documentação. Para publicar a partir de CI, faça
 `POST /api/auth/login` e use o `token` retornado como `Authorization: Bearer` nas rotas `/api/admin/*`.
 
-> A busca e a árvore usam `Scan` (com cache curto em memória), adequado para centenas/milhares de páginas.
-> Para volumes maiores, troque a busca por OpenSearch e indexe via DynamoDB Streams.
+> A árvore e a busca são lidas por `Query` e ficam em memória até alguma página mudar, o que atende bem alguns milhares
+> de páginas. Para volumes maiores, troque a busca por um índice dedicado (OpenSearch, Meilisearch) alimentado nas gravações.
 
 ## Estrutura
 
@@ -223,7 +241,7 @@ docker run -p 8000:8000 --env-file .env.prod accounthub-docs
 backend/
   app/
     main.py            # FastAPI, rotas e servidor do bundle (SPA fallback)
-    storage.py         # DynamoDB + S3 (páginas, conteúdo, histórico, mídia)
+    storage.py         # DynamoDB + S3: chaves de cada registro, textos imutáveis, cache da árvore
     service.py         # árvore, CRUD, mover, busca, importação (httpx)
     auth.py            # JWT via cookie httpOnly ou Bearer; papéis admin/editor
     reviews.py         # propostas de revisão (comentar, aprovar, aplicar)

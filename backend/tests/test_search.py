@@ -34,12 +34,10 @@ def test_index_follows_writes(admin):
     assert admin.get("/api/search", params={"q": "zarabatana"}).json() == []
 
 
-def test_repeated_searches_reuse_index(client, monkeypatch):
-    storage = client.app.state.storage
+def test_repeated_searches_reuse_index(client, aws_calls):
     client.get("/api/search", params={"q": "dynamodb"})  # monta o índice
-    scans = []
-    original = storage.list_pages
-    monkeypatch.setattr(storage, "list_pages", lambda **kw: scans.append(kw) or original(**kw))
+    aws_calls.clear()
     for query in ("dynamodb", "token", "conta"):
         client.get("/api/search", params={"q": query})
-    assert not [kw for kw in scans if kw.get("full")]
+    # só confere o contador da árvore; páginas e textos de busca não são lidos de novo
+    assert set(aws_calls) == {"GetItem"}

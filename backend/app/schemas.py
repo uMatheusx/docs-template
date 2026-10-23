@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, HttpUrl, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, HttpUrl, StringConstraints, ValidationInfo, field_validator
 
 PageKind = Literal["doc", "openapi", "asyncapi"]
 
@@ -103,8 +103,8 @@ class HistoryEntry(BaseModel):
     id: str
     author: str
     size: int
-    version: int | None = None
-    semver: str | None = None
+    version: int
+    semver: str
     note: str = ""
     created_at: str
     archived_at: str
@@ -162,6 +162,8 @@ class LinkReport(BaseModel):
 
 # ---------------------------------------------------------------- revisões
 ReviewStatus = Literal["open", "approved", "changes_requested", "merged", "closed"]
+Bump = Literal["patch", "minor", "major"]
+Semver = Annotated[str, StringConstraints(pattern=r"^\d+\.\d+\.\d+$")]
 
 
 class ReviewFields(BaseModel):
@@ -172,19 +174,26 @@ class ReviewFields(BaseModel):
     published: bool | None = None
 
 
-class ReviewInput(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
-    # obrigatória: quem revisa precisa saber o que mudou e por quê
-    description: str = Field(min_length=1, max_length=2000)
+class ReviewItemInput(BaseModel):
+    """O que muda numa página da proposta."""
+
+    page_id: str
     content: str | None = None
     fields: ReviewFields = ReviewFields()
     base_version: int
     # versão x.y.z em que o rascunho se baseia (informativa; a mesclagem usa base_version)
-    base_semver: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$")
+    base_semver: Semver | None = None
     # tamanho da mudança: define a versão recomendada quando a proposta for aplicada
-    bump: Literal["patch", "minor", "major"] = "patch"
+    bump: Bump = "patch"
     # versão escolhida à mão no lugar da recomendada (precisa ser maior que a atual)
-    semver: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$")
+    semver: Semver | None = None
+
+
+class ReviewInput(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    # obrigatória: quem revisa precisa saber o que mudou e por quê
+    description: str = Field(min_length=1, max_length=2000)
+    items: list[ReviewItemInput] = Field(min_length=1, max_length=100)
 
     @field_validator("title", "description")
     @classmethod
@@ -204,29 +213,33 @@ class ReviewEvent(BaseModel):
     at: str
 
 
-class Review(BaseModel):
-    id: str
-    number: int
+class ReviewItem(BaseModel):
     page_id: str
     page_title: str = ""
     page_path: str = ""
     page_published: bool = True
-    title: str
-    description: str = ""
     base_version: int
     base_semver: str = ""
-    bump: Literal["patch", "minor", "major"] = "patch"
+    bump: Bump = "patch"
     semver: str | None = None
     fields: ReviewFields
     has_content: bool
+    merged_version: int | None = None
+    merged_semver: str | None = None
+
+
+class Review(BaseModel):
+    """Proposta de alteração em uma ou várias páginas, revisada e aplicada junta (como um pull request)."""
+
+    id: str
+    number: int
+    title: str
+    description: str = ""
     status: ReviewStatus
     author: str
     created_at: str
     updated_at: str
-    merged_version: int | None = None
-    merged_semver: str | None = None
-    # proposta que faz parte de um pacote (várias páginas revisadas juntas)
-    batch_id: str | None = None
+    items: list[ReviewItem]
     events: list[ReviewEvent] = []
 
 
@@ -242,7 +255,7 @@ class MergeConflict(BaseModel):
 
 
 class MergeInfo(BaseModel):
-    """Situação da proposta frente à versão atual da página.
+    """Situação de uma página da proposta frente à versão atual dela.
 
     - current: a página não mudou desde a proposta
     - clean: mudou, mas as alterações se combinam sozinhas (merged_content é o resultado)
@@ -259,7 +272,7 @@ class MergeInfo(BaseModel):
     merged_content: str | None = None
 
 
-class ReviewDetail(Review):
+class ReviewItemDetail(ReviewItem):
     proposed_content: str
     current_content: str
     current_version: int
@@ -274,6 +287,10 @@ class ReviewDetail(Review):
     merge: MergeInfo | None = None
 
 
+class ReviewDetail(Review):
+    items: list[ReviewItemDetail]
+
+
 class ReviewComment(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
 
@@ -283,65 +300,12 @@ class ReviewDecision(BaseModel):
 
 
 class ReviewMerge(BaseModel):
-    # força a proposta inteira por cima da página, sem mesclar
+    # força o texto proposto por cima das páginas, sem mesclar
     force: bool = False
-    # uma escolha por conflito, na ordem em que aparecem em ReviewDetail.merge.conflicts
-    resolutions: list[Literal["ours", "theirs", "both"]] | None = None
-    # versão escolhida por quem aplica, no lugar da sugerida (precisa ser maior que a atual)
-    semver: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$")
-
-
-class BatchItem(BaseModel):
-    """Uma página dentro de um pacote: o que muda nela, sem título nem descrição (valem os do pacote)."""
-
-    page_id: str
-    content: str | None = None
-    fields: ReviewFields = ReviewFields()
-    base_version: int
-    base_semver: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$")
-    bump: Literal["patch", "minor", "major"] = "patch"
-
-
-class BatchInput(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
-    description: str = Field(min_length=1, max_length=2000)
-    items: list[BatchItem] = Field(min_length=1, max_length=100)
-
-    @field_validator("title", "description")
-    @classmethod
-    def _not_blank(cls, value: str, info: ValidationInfo) -> str:
-        value = value.strip()
-        if not value:
-            message = "Descreva o que mudou e por quê." if info.field_name == "description" else "Informe um título."
-            raise ValueError(message)
-        return value
-
-
-class BatchPage(BaseModel):
-    review_id: str
-    page_id: str
-    page_title: str = ""
-    page_path: str = ""
-    status: ReviewStatus
-
-
-class Batch(BaseModel):
-    """Várias propostas, de páginas diferentes, revisadas e aplicadas juntas (como um pull request)."""
-
-    id: str
-    number: int
-    title: str
-    description: str = ""
-    author: str
-    status: ReviewStatus
-    created_at: str
-    updated_at: str
-    pages: list[BatchPage]
-    events: list[ReviewEvent] = []
-
-
-class BatchDetail(Batch):
-    reviews: list[ReviewDetail]
+    # por página: uma escolha por conflito, na ordem em que aparecem em merge.conflicts
+    resolutions: dict[str, list[Literal["ours", "theirs", "both"]]] | None = None
+    # por página: versão escolhida por quem aplica, no lugar da sugerida (precisa ser maior que a atual)
+    semver: dict[str, Semver] | None = None
 
 
 # ---------------------------------------------------------------- modelos de página

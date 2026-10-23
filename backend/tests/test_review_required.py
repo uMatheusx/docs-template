@@ -1,6 +1,6 @@
 from app.config import get_settings
 
-from .conftest import apply_change, find, login
+from .conftest import apply_change, find, login, propose
 
 
 def faq_of(client):
@@ -32,8 +32,9 @@ def test_nobody_publishes_without_review(admin):
 
 def test_review_description_is_required(admin):
     faq = faq_of(admin)
-    base = {"title": "Mudança", "content": "# Novo", "base_version": faq["version"]}
-    url = f"/api/admin/pages/{faq['id']}/reviews"
+    item = {"page_id": faq["id"], "content": "# Novo", "base_version": faq["version"]}
+    base = {"title": "Mudança", "items": [item]}
+    url = "/api/admin/reviews"
     assert admin.post(url, json=base).status_code == 422  # sem descrição
     assert admin.post(url, json={**base, "description": ""}).status_code == 422
     blank = admin.post(url, json={**base, "description": "   "})
@@ -52,10 +53,7 @@ def test_author_can_approve_and_apply_own_change(admin):
 def test_self_approval_can_still_be_disabled(admin, monkeypatch):
     monkeypatch.setattr(get_settings(), "review_self_approval", False)
     faq = faq_of(admin)
-    review = admin.post(
-        f"/api/admin/pages/{faq['id']}/reviews",
-        json={"title": "Minha", "description": "Texto.", "content": "# x", "base_version": faq["version"]},
-    ).json()
+    review = propose(admin, faq, "# x").json()
     assert admin.post(f"/api/admin/reviews/{review['id']}/approve", json={}).status_code == 403
     login(admin, "rui")  # outro admin revisa
     assert admin.post(f"/api/admin/reviews/{review['id']}/approve", json={}).status_code == 200

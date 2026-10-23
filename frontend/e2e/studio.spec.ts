@@ -170,7 +170,8 @@ test("proposta carregada no editor não conta como alteração não salva", asyn
   // confirmar substitui pelo conteúdo da proposta
   await page.getByRole("button", { name: "Carregar no editor" }).click();
   await confirm.getByRole("button", { name: "Substituir e carregar" }).click();
-  await expect(page.getByText(/Proposta #\d+ carregada/)).toBeVisible();
+  // o aviso do carregamento anterior pode ainda estar na tela: vale o mais recente
+  await expect(page.getByText(/Proposta #\d+ carregada/).last()).toBeVisible();
   await expect(page.getByText("Mais uma frase.")).toHaveCount(0);
 
   // sem nada a perder (já é a proposta), carregar não pergunta nada

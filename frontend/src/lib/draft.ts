@@ -1,5 +1,5 @@
 import type { Draft } from "@/components/admin/inspector";
-import type { Page, ReviewFields, ReviewInput } from "@/lib/api";
+import type { Page, ReviewFields, ReviewItemInput } from "@/lib/api";
 import type { LocalDraft } from "@/lib/local-drafts";
 
 export const FIELDS = ["title", "slug", "icon", "description", "published", "content"] as const;
@@ -34,12 +34,8 @@ export const changedFields = (draft: Draft, page: Page) => {
   return FIELDS.filter((f) => draft[f] !== base[f]);
 };
 
-/** Corpo da proposta para um rascunho; null se não há o que propor. */
-export function reviewPayload(
-  page: Page,
-  local: LocalDraft,
-  extra: { title: string; description: string; bump: ReviewInput["bump"] },
-): ReviewInput | null {
+/** O que um rascunho muda na página, como item de proposta; null se não há o que propor. */
+export function reviewItem(page: Page, local: LocalDraft, bump: ReviewItemInput["bump"]): ReviewItemInput | null {
   const draft = rebaseLocal(local, page);
   const changed = changedFields(draft, page);
   const fields: ReviewFields = {};
@@ -47,10 +43,11 @@ export function reviewPayload(
   const content = changed.includes("content") ? draft.content : undefined;
   if (content === undefined && Object.keys(fields).length === 0) return null;
   return {
-    ...extra,
+    page_id: page.id,
     content,
     fields,
     base_version: local.baseVersion,
     base_semver: local.baseSemver,
+    bump,
   };
 }

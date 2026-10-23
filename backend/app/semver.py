@@ -40,11 +40,6 @@ def is_greater(candidate: str, current: str) -> bool:
     return parse(candidate) > parse(current)
 
 
-def legacy_semver(revision: int) -> str:
-    """Versão de quem foi gravado antes do x.y.z: a revisão n vira 1.0.(n-1)."""
-    return f"1.0.{max(int(revision), 1) - 1}"
-
-
 def bump_semver(current: str, kind: Bump = "patch", *, publishing: bool = False) -> str:
     """Próxima versão. A primeira publicação de uma página ainda 0.x vira 1.0.0, qualquer que seja o tipo."""
     major, minor, patch = parse(current)

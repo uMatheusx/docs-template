@@ -28,15 +28,17 @@ class Settings(BaseSettings):
 
     # AWS
     aws_region: str = "us-east-1"
-    dynamodb_table: str = "accounthub-docs-pages"
+    # tabela com chave composta pk + sk (veja storage.py)
+    dynamodb_table: str = "accounthub-docs"
     dynamodb_endpoint_url: str | None = None
     s3_bucket: str = "accounthub-docs"
     s3_endpoint_url: str | None = None
     auto_create_resources: bool = False
     seed_on_startup: bool = False
-    cache_ttl_seconds: float = 5.0
-    # validade do índice de busca para mudanças feitas por OUTRAS instâncias (as desta são imediatas)
-    search_cache_ttl_seconds: float = 60.0
+    # de quanto em quanto tempo conferir se OUTRA instância mudou páginas (as mudanças desta valem na hora)
+    cache_ttl_seconds: float = 1.0
+    # requisições mais lentas que isso aparecem no log
+    slow_request_ms: int = 1000
 
     # Autenticação
     admin_username: str = "admin"

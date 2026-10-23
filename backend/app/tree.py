@@ -21,8 +21,7 @@ def build_tree(pages: list[dict], *, include_drafts: bool) -> list[dict]:
         nodes = []
         for page in sorted(by_parent.get(parent_id, []), key=sort_key):
             path = f"{parent_path}/{page['slug']}" if parent_path else page["slug"]
-            node = {k: v for k, v in page.items() if k != "search_text"}
-            node["path"] = path
+            node = {**page, "path": path}
             node["children"] = walk(page["id"], path)
             nodes.append(node)
         return nodes

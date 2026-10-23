@@ -1,6 +1,6 @@
 import pytest
 
-from app.semver import bump_semver, is_valid, legacy_semver, parse
+from app.semver import bump_semver, is_valid, parse
 
 
 def test_bumps():
@@ -26,11 +26,6 @@ def test_numbers_are_not_limited_to_one_digit():
     assert bump_semver("1.9.9", "patch") == "1.9.10"
     assert bump_semver("1.9.10", "minor") == "1.10.0"
     assert bump_semver("9.99.99", "major") == "10.0.0"
-
-
-def test_legacy_revisions_map_to_1_0_x():
-    assert [legacy_semver(n) for n in (1, 2, 12)] == ["1.0.0", "1.0.1", "1.0.11"]
-    assert legacy_semver(0) == "1.0.0"
 
 
 def test_parse_and_validation():

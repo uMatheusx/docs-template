@@ -1,8 +1,4 @@
-import os
-
-import boto3
-
-from .conftest import apply_change, find, login, publish
+from .conftest import apply_change, find, login, propose, publish
 
 
 def new_draft(admin, title="Versionada"):
@@ -50,49 +46,33 @@ def test_applied_proposals_bump_by_the_chosen_kind(admin):
 
 def test_bump_defaults_to_patch_and_rejects_unknown_kinds(admin):
     page = publish(admin, new_draft(admin)["id"])
-    url = f"/api/admin/pages/{page['id']}/reviews"
-    base = {"title": "T", "description": "D", "content": "# x", "base_version": page["version"]}
-    created = admin.post(url, json=base)
-    assert created.status_code == 201 and created.json()["bump"] == "patch"
-    assert admin.post(url, json={**base, "bump": "gigante"}).status_code == 422
-    assert admin.post(url, json={**base, "base_semver": "v1"}).status_code == 422
+    created = propose(admin, page, "# x")
+    assert created.status_code == 201 and created.json()["items"][0]["bump"] == "patch"
+    assert propose(admin, page, "# x", bump="gigante").status_code == 422
+    assert propose(admin, page, "# x", base_semver="v1").status_code == 422
+
+
+def item_of(admin, review):
+    """A página (única) da proposta, com os detalhes."""
+    return admin.get(f"/api/admin/reviews/{review['id']}").json()["items"][0]
 
 
 def test_review_detail_shows_versions_and_next_version(admin):
     page = publish(admin, new_draft(admin)["id"])
-    review = admin.post(
-        f"/api/admin/pages/{page['id']}/reviews",
-        json={
-            "title": "T",
-            "description": "D",
-            "content": "# x",
-            "base_version": page["version"],
-            "base_semver": page["semver"],
-            "bump": "minor",
-        },
-    ).json()
-    detail = admin.get(f"/api/admin/reviews/{review['id']}").json()
+    review = propose(admin, page, "# x", base_semver=page["semver"], bump="minor").json()
+    detail = item_of(admin, review)
     assert detail["base_semver"] == "1.0.0" and detail["current_semver"] == "1.0.0"
     assert detail["bump"] == "minor" and detail["next_semver"] == "1.1.0"
     admin.post(f"/api/admin/reviews/{review['id']}/approve", json={})
     merged = admin.post(f"/api/admin/reviews/{review['id']}/merge", json={}).json()
-    assert merged["merged_semver"] == "1.1.0"
+    assert merged["items"][0]["merged_semver"] == "1.1.0"
     assert merged["events"][-1]["body"].startswith("Aplicada como 1.1.0.")
 
 
 def test_next_version_of_a_publication_request_is_1_0_0(admin):
     draft = new_draft(admin)
-    review = admin.post(
-        f"/api/admin/pages/{draft['id']}/reviews",
-        json={
-            "title": "T",
-            "description": "D",
-            "fields": {"published": True},
-            "base_version": 1,
-            "bump": "patch",
-        },
-    ).json()
-    assert admin.get(f"/api/admin/reviews/{review['id']}").json()["next_semver"] == "1.0.0"
+    review = propose(admin, draft, fields={"published": True}).json()
+    assert item_of(admin, review)["next_semver"] == "1.0.0"
 
 
 def test_history_entries_carry_their_semver(admin):
@@ -107,60 +87,29 @@ def test_history_entries_carry_their_semver(admin):
 
 def test_stale_proposal_messages_use_semver(admin):
     page = publish(admin, new_draft(admin)["id"])
-    mine = admin.post(
-        f"/api/admin/pages/{page['id']}/reviews",
-        json={
-            "title": "T",
-            "description": "D",
-            "content": "# mine",
-            "base_version": page["version"],
-            "base_semver": page["semver"],
-        },
-    ).json()
+    mine = propose(admin, page, "# mine", base_semver=page["semver"]).json()
     admin.post(f"/api/admin/reviews/{mine['id']}/approve", json={})
     login(admin, "rui")
     apply_change(admin, page["id"], content="# other", bump="minor")
-    info = admin.get(f"/api/admin/reviews/{mine['id']}").json()["merge"]
+    info = item_of(admin, mine)["merge"]
     assert info["base_semver"] == "1.0.0" and info["current_semver"] == "1.1.0"
 
 
-def test_pages_saved_before_semver_get_an_equivalent_version(admin):
-    faq = find(admin.get("/api/admin/tree").json(), "faq")
-    updated = apply_change(admin, faq["id"], content="# x")  # revisão 2
-    table = boto3.resource("dynamodb", region_name="us-east-1").Table(
-        os.environ.get("DYNAMODB_TABLE", "accounthub-docs-pages")
-    )
-    table.update_item(Key={"id": faq["id"]}, UpdateExpression="REMOVE semver")
-    assert updated["version"] == 2
-    legacy = find(admin.get("/api/tree").json(), "faq")
-    assert legacy["semver"] == "1.0.1"  # revisão 2 → 1.0.1
-    next_one = apply_change(admin, faq["id"], content="# y")
-    assert next_one["semver"] == "1.0.2"
-
-
 # ---------------------------------------------------------------- versão escolhida à mão
-def propose_custom(client, page, **extra):
-    body = {
-        "title": "T",
-        "description": "D",
-        "content": "# novo",
-        "base_version": page["version"],
-        "base_semver": page["semver"],
-        **extra,
-    }
-    return client.post(f"/api/admin/pages/{page['id']}/reviews", json=body)
+def propose_custom(client, page, content="# novo", **extra):
+    return propose(client, page, content, base_semver=page["semver"], **extra)
 
 
 def test_author_can_pick_any_greater_version(admin):
     page = publish(admin, new_draft(admin)["id"])  # 1.0.0
     review = propose_custom(admin, page, bump="patch", semver="1.3.0")
-    assert review.status_code == 201 and review.json()["semver"] == "1.3.0"
-    detail = admin.get(f"/api/admin/reviews/{review.json()['id']}").json()
+    assert review.status_code == 201 and review.json()["items"][0]["semver"] == "1.3.0"
+    detail = item_of(admin, review.json())
     assert detail["next_semver"] == "1.3.0" and detail["recommended_semver"] == "1.0.1"
     assert detail["semver_outdated"] is False
     admin.post(f"/api/admin/reviews/{review.json()['id']}/approve", json={})
     merged = admin.post(f"/api/admin/reviews/{review.json()['id']}/merge", json={}).json()
-    assert merged["merged_semver"] == "1.3.0"
+    assert merged["items"][0]["merged_semver"] == "1.3.0"
     assert get(admin, page["id"])["semver"] == "1.3.0"
 
 
@@ -186,11 +135,11 @@ def test_reviewer_can_override_the_version_when_applying(admin):
     review = propose_custom(admin, page, bump="patch").json()
     admin.post(f"/api/admin/reviews/{review['id']}/approve", json={})
     url = f"/api/admin/reviews/{review['id']}/merge"
-    assert admin.post(url, json={"semver": "1.0.0"}).status_code == 400  # não é maior
-    assert admin.post(url, json={"semver": "um"}).status_code == 422
+    assert admin.post(url, json={"semver": {page["id"]: "1.0.0"}}).status_code == 400  # não é maior
+    assert admin.post(url, json={"semver": {page["id"]: "um"}}).status_code == 422
     assert get(admin, page["id"])["semver"] == "1.0.0"  # nada foi aplicado
-    merged = admin.post(url, json={"semver": "2.4.1"})
-    assert merged.status_code == 200 and merged.json()["merged_semver"] == "2.4.1"
+    merged = admin.post(url, json={"semver": {page["id"]: "2.4.1"}})
+    assert merged.status_code == 200 and merged.json()["items"][0]["merged_semver"] == "2.4.1"
 
 
 def test_picked_version_that_was_overtaken_falls_back_to_the_recommended(admin):
@@ -200,11 +149,11 @@ def test_picked_version_that_was_overtaken_falls_back_to_the_recommended(admin):
     login(admin, "rui")
     apply_change(admin, page["id"], content="# outra", bump="minor")  # a página vai a 1.1.0
 
-    detail = admin.get(f"/api/admin/reviews/{mine['id']}").json()
+    detail = item_of(admin, mine)
     assert detail["semver_outdated"] is True
     assert detail["recommended_semver"] == "1.2.0" and detail["next_semver"] == "1.2.0"
     merged = admin.post(f"/api/admin/reviews/{mine['id']}/merge", json={"force": True}).json()
-    assert merged["merged_semver"] == "1.2.0"
+    assert merged["items"][0]["merged_semver"] == "1.2.0"
 
 
 def test_first_publication_can_still_be_given_another_version(admin):
@@ -212,4 +161,4 @@ def test_first_publication_can_still_be_given_another_version(admin):
     review = propose_custom(admin, draft, content=None, fields={"published": True}, semver="2.0.0").json()
     admin.post(f"/api/admin/reviews/{review['id']}/approve", json={})
     merged = admin.post(f"/api/admin/reviews/{review['id']}/merge", json={}).json()
-    assert merged["merged_semver"] == "2.0.0"
+    assert merged["items"][0]["merged_semver"] == "2.0.0"

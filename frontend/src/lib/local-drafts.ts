@@ -15,7 +15,7 @@ export interface LocalDraft {
   savedAt: string;
   /** revisão da página em que o rascunho se baseia (a mesclagem compara com ela ao aplicar a proposta) */
   baseVersion: number;
-  /** versão x.y.z dessa base (rascunhos antigos não guardavam: vem da revisão) */
+  /** versão x.y.z dessa base */
   baseSemver?: string;
   /** campos da página nessa versão: separam o que o usuário mudou do que mudou na página depois */
   baseDraft?: Draft;

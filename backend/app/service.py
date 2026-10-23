@@ -8,9 +8,9 @@ import uuid
 import httpx
 from fastapi import HTTPException, status
 
-from .markdown_utils import first_heading, fold, parse_frontmatter, slugify, to_search_text
+from .markdown_utils import first_heading, fold, parse_frontmatter, slugify
 from .schemas import PageCreate, PageUpdate
-from .semver import DRAFT_START, FIRST_RELEASE, Bump, bump_semver, is_greater, legacy_semver
+from .semver import DRAFT_START, FIRST_RELEASE, Bump, bump_semver, is_greater
 from .specs import detect_kind, parse_spec, spec_info
 from .storage import Storage, VersionConflict, utcnow
 from .tree import build_tree, descendants, flatten, sort_key
@@ -21,7 +21,7 @@ def not_found(what: str = "Página") -> HTTPException:
 
 
 def _strip(node: dict) -> dict:
-    return {k: v for k, v in node.items() if k not in ("children", "search_text")}
+    return {k: v for k, v in node.items() if k != "children"}
 
 
 class DocsService:
@@ -42,12 +42,12 @@ class DocsService:
 
     def get_page(self, page_id: str, *, include_drafts: bool) -> dict:
         page = self._find(page_id=page_id, include_drafts=include_drafts)
-        page["content"] = self.storage.get_content(page_id)
+        page["content"] = self.storage.get_content(page)
         return page
 
     def get_page_by_path(self, path: str, *, include_drafts: bool) -> dict:
         page = self._find(path=path.strip("/"), include_drafts=include_drafts)
-        page["content"] = self.storage.get_content(page["id"])
+        page["content"] = self.storage.get_content(page)
         return page
 
     def get_page_meta(self, path: str) -> dict:
@@ -117,14 +117,9 @@ class DocsService:
             "total": len(pages),
             "published": published,
             "drafts": len(pages) - published,
-            "assets": sum(1 for _ in self.storage.list_assets()),
-            # as propostas de um pacote contam como uma só
-            "open_reviews": len(
-                {
-                    r.get("batch_id") or r["id"]
-                    for r in self.storage.list_reviews()
-                    if r["status"] in ("open", "approved", "changes_requested")
-                }
+            "assets": len(self.storage.list_assets()),
+            "open_reviews": sum(
+                1 for r in self.storage.list_reviews() if r["status"] in ("open", "approved", "changes_requested")
             ),
             "recent": [{**p, "path": paths.get(p["id"], p["slug"])} for p in recent],
         }
@@ -159,12 +154,8 @@ class DocsService:
             "semver": FIRST_RELEASE if data.published else DRAFT_START,
             "note": "Página criada",
             "kind": data.kind,
-            "search_text": to_search_text(content),
         }
-        self.storage.put_content(
-            page_id, content, author, version=1, semver=item["semver"], note="Página criada", archive=False
-        )
-        self.storage.put_page(item)
+        self.storage.create_page(item, content)
         return self.get_page(page_id, include_drafts=True)
 
     def update_page(
@@ -195,8 +186,8 @@ class DocsService:
                 raise HTTPException(
                     status.HTTP_403_FORBIDDEN, "Para publicar, envie uma proposta de revisão pedindo a publicação."
                 )
-        expected = data.version if data.version is not None else current.get("version", 1)
-        if expected != current.get("version", 1):
+        expected = data.version if data.version is not None else current["version"]
+        if expected != current["version"]:
             raise _conflict()
 
         fields = data.model_dump(exclude_unset=True, exclude={"version", "content"})
@@ -210,12 +201,10 @@ class DocsService:
                 if p.get("parent_id") == current.get("parent_id") and p["id"] != page_id
             ]
             fields["slug"] = _unique_slug(fields["slug"], siblings)
-        if data.content is not None:
-            fields["search_text"] = to_search_text(data.content)
         # a nota descreve só esta versão: sem nota, a anterior não deve "vazar" para cá
         note = (data.note or "").strip()
         publishing = bool(fields.get("published")) and not current.get("published", True)
-        current_semver = current.get("semver") or legacy_semver(current.get("version", 1))
+        current_semver = current["semver"]
         draft_save = not via_review and not current.get("published", True)
         if draft_save:
             semver, note = current_semver, ""
@@ -228,13 +217,9 @@ class DocsService:
         fields.update(updated_at=utcnow(), updated_by=author, version=expected + 1, semver=semver, note=note)
 
         try:
-            self.storage.update_page(page_id, fields, expected_version=expected)
+            self.storage.save_page(current, fields, content=data.content, archive=not draft_save)
         except VersionConflict:
             raise _conflict() from None
-        if data.content is not None:
-            self.storage.put_content(
-                page_id, data.content, author, version=expected + 1, semver=semver, note=note, archive=not draft_save
-            )
         if before is not None:
             self._remember_moved(before)
         return self.get_page(page_id, include_drafts=True)
@@ -263,8 +248,7 @@ class DocsService:
                 changes.setdefault(sibling["id"], {})["order"] = order
         changes[page_id].update(updated_at=utcnow(), updated_by=author)
         before = self._paths()
-        for target_id, fields in changes.items():
-            self.storage.update_page(target_id, fields)
+        self.storage.move_pages(changes)
         self._remember_moved(before)
         return self.tree(include_drafts=True)
 
@@ -273,14 +257,28 @@ class DocsService:
         if not any(p["id"] == page_id for p in pages):
             raise not_found()
         ids = descendants(pages, page_id)
+        self._drop_from_reviews(set(ids))
         for target in reversed(ids):
-            self.storage.delete_reviews_for_page(target)
             self.storage.delete_page(target)
         return len(ids)
 
+    def _drop_from_reviews(self, page_ids: set[str]) -> None:
+        """Tira as páginas excluídas das propostas; a proposta que fica sem páginas é excluída junto."""
+        for review in self.storage.list_reviews():
+            gone = [i["page_id"] for i in review["items"] if i["page_id"] in page_ids]
+            if not gone:
+                continue
+            review["items"] = [i for i in review["items"] if i["page_id"] not in page_ids]
+            if not review["items"]:
+                self.storage.delete_review(review["id"])
+                continue
+            self.storage.put_review(review)
+            for page_id in gone:
+                self.storage.delete_prefix(f"reviews/{review['id']}/{page_id}.")
+
     def restore_version(self, page_id: str, version_id: str, author: str) -> dict:
-        content = self.storage.get_history(page_id, version_id)
-        if content is None:
+        entry = self.storage.get_history(page_id, version_id)
+        if entry is None:
             raise not_found("Versão")
         page = self.storage.get_page(page_id)
         if page and page.get("published", True):
@@ -288,9 +286,8 @@ class DocsService:
                 status.HTTP_403_FORBIDDEN,
                 "Esta página está publicada: carregue a versão no editor e envie como proposta de revisão.",
             )
-        entry = next((e for e in self.storage.list_history(page_id) if e["id"] == version_id), None)
-        label = entry["semver"] if entry and entry.get("semver") else "uma versão anterior"
-        return self.update_page(page_id, PageUpdate(content=content, note=f"Restaurada de {label}"), author)
+        note = f"Restaurada de {entry['semver']}"
+        return self.update_page(page_id, PageUpdate(content=entry["content"], note=note), author)
 
     # ------------------------------------------------------------------ importação
     def import_file(

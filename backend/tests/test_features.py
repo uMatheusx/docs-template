@@ -1,6 +1,4 @@
-import os
-
-from .conftest import apply_change, find, login, publish
+from .conftest import apply_change, find, login, propose, publish
 
 SPEC = """openapi: 3.0.3
 info:
@@ -82,27 +80,11 @@ def test_editor_permissions_and_review_flow(client):
     )
     assert client.delete(f"/api/admin/pages/{created['id']}").status_code == 403
 
-    review = client.post(
-        f"/api/admin/pages/{faq['id']}/reviews",
-        json={
-            "title": "Atualiza FAQ",
-            "description": "Nova pergunta",
-            "content": "# FAQ\n\nNovo",
-            "base_version": faq["version"],
-        },
-    ).json()
+    review = propose(client, faq, "# FAQ\n\nNovo", title="Atualiza FAQ", description="Nova pergunta").json()
     assert review["status"] == "open" and review["number"] >= 1
     assert client.post(f"/api/admin/reviews/{review['id']}/approve", json={}).status_code == 403
     # reenviar atualiza a mesma proposta (não cria outra)
-    again = client.post(
-        f"/api/admin/pages/{faq['id']}/reviews",
-        json={
-            "title": "Atualiza FAQ",
-            "description": "Nova pergunta, revisada.",
-            "content": "# FAQ\n\nNovo 2",
-            "base_version": faq["version"],
-        },
-    ).json()
+    again = propose(client, faq, "# FAQ\n\nNovo 2", title="Atualiza FAQ", description="Nova pergunta, revisada.").json()
     assert again["id"] == review["id"] and [e["type"] for e in again["events"]] == ["created", "updated"]
 
     login(client, "admin")
@@ -111,12 +93,12 @@ def test_editor_permissions_and_review_flow(client):
     approved = client.post(f"/api/admin/reviews/{review['id']}/approve", json={"body": "Aprovado"}).json()
     assert approved["status"] == "approved"
     merged = client.post(f"/api/admin/reviews/{review['id']}/merge", json={}).json()
-    assert merged["status"] == "merged" and merged["merged_version"] == faq["version"] + 1
+    assert merged["status"] == "merged" and merged["items"][0]["merged_version"] == faq["version"] + 1
     page = client.get(f"/api/admin/pages/{faq['id']}").json()
     assert page["content"] == "# FAQ\n\nNovo 2"
     assert page["note"].startswith(f"Revisão #{review['number']}") and page["updated_by"] == "edna"
     # depois de aplicada, o diff continua comparando com o conteúdo de antes
-    detail = client.get(f"/api/admin/reviews/{review['id']}").json()
+    detail = client.get(f"/api/admin/reviews/{review['id']}").json()["items"][0]
     assert (
         detail["current_content"].startswith("# Perguntas frequentes")
         and detail["proposed_content"] == "# FAQ\n\nNovo 2"
@@ -127,15 +109,7 @@ def test_editor_permissions_and_review_flow(client):
 
 def test_review_rules_conflict_and_self_approval(admin):
     faq = find(admin.get("/api/admin/tree").json(), "faq")
-    own = admin.post(
-        f"/api/admin/pages/{faq['id']}/reviews",
-        json={
-            "title": "Minha",
-            "description": "Atualiza a descrição.",
-            "fields": {"description": "Nova descrição"},
-            "base_version": faq["version"],
-        },
-    ).json()
+    own = propose(admin, faq, fields={"description": "Nova descrição"}).json()
     # o autor pode aprovar a própria proposta (REVIEW_SELF_APPROVAL é verdadeiro por padrão)
     assert admin.post(f"/api/admin/reviews/{own['id']}/approve", json={}).status_code == 200
 
@@ -157,17 +131,3 @@ def test_templates(client):
     login(client, "rui")
     assert client.delete(f"/api/admin/templates/{tpl['id']}").status_code == 204
     assert client.get("/api/admin/templates").json() == []
-
-
-def test_legacy_pages_without_kind(admin):
-    # páginas criadas antes de existir "kind"/"note" não podem quebrar a árvore nem a leitura
-    import boto3
-
-    faq = find(admin.get("/api/admin/tree").json(), "faq")
-    table = boto3.resource("dynamodb", region_name="us-east-1").Table(
-        os.environ.get("DYNAMODB_TABLE", "accounthub-docs-pages")
-    )
-    table.update_item(Key={"id": faq["id"]}, UpdateExpression="REMOVE kind, note")
-    node = find(admin.get("/api/tree").json(), "faq")
-    assert node["kind"] == "doc" and node["note"] == ""
-    assert admin.get("/api/pages/by-path", params={"path": "faq"}).status_code == 200

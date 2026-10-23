@@ -32,7 +32,7 @@ def link_report(storage: Storage) -> dict:
         if node.get("kind", "doc") != "doc":
             continue
         checked += 1
-        raw = storage.get_content(node["id"])
+        raw = storage.get_content(node)
         for embed in EMBED_RE.finditer(raw):
             ref = REF_RE.search(embed.group(3))
             if not ref:

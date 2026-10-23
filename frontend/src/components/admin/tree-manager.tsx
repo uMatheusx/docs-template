@@ -76,7 +76,7 @@ export function TreeManager({ tree, selectedId, onSelect, onAddChild, onMove, on
   // letras de situação: rascunhos locais deste navegador (M/S) e páginas com proposta aberta (E)
   const localDrafts = useLocalDrafts();
   const { data: activeReviews } = useSWR<Review[]>(keys.reviews("active"));
-  const inReview = new Set((activeReviews ?? []).map((r) => r.page_id));
+  const inReview = new Set((activeReviews ?? []).flatMap((r) => r.items.map((i) => i.page_id)));
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [dragId, setDragId] = useState<string | null>(null);
   const [drop, setDrop] = useState<{ id: string; position: Position } | null>(null);

@@ -1,8 +1,29 @@
-"""Acesso ao DynamoDB (metadados das páginas) e S3 (conteúdo markdown, histórico e mídia)."""
+"""Acesso ao DynamoDB (metadados) e ao S3 (textos e arquivos).
+
+Uma tabela, chave composta (pk, sk). Cada tipo de registro mora numa partição própria: listar um tipo é uma Query
+(nunca um Scan) e lê só aquele tipo, sempre com leitura consistente.
+
+    pk               sk                     o quê
+    PAGE             <page_id>              metadados da página + `text` (o texto atual: chave no S3, versão, autor…)
+    SEARCH           <page_id>              texto da página preparado para a busca
+    TEXT#<page_id>   <versão, 10 dígitos>   um texto anterior da página (histórico de versões)
+    REVIEW           <review_id>            proposta de revisão (uma ou várias páginas)
+    REDIRECT         <endereço antigo>      id da página que esteve nesse endereço
+    ASSET            <asset_id>             arquivo enviado (o conteúdo fica no S3)
+    TEMPLATE         <template_id>          modelo de página
+    COUNTER          <nome>                 contador atômico ("reviews": número das propostas; "tree": ver abaixo)
+
+Textos são objetos imutáveis no S3 (pages/<id>/<versão>-<sufixo>.md): uma gravação envia o texto novo e só então
+aponta a página para ele, numa transação condicionada à versão esperada. Se a transação falhar, sobra só um objeto
+órfão (que é apagado em seguida); a página nunca fica com metadados de uma versão e texto de outra.
+
+Toda gravação que muda páginas soma 1 ao contador "tree". As listas em memória (árvore e busca) guardam o valor com
+que foram montadas e só são lidas de novo quando ele muda — conferido no máximo a cada CACHE_TTL_SECONDS, então
+mudanças feitas por outras instâncias aparecem nesse intervalo, e as desta instância, na hora.
+"""
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import threading
@@ -12,36 +33,29 @@ from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
-from urllib.parse import quote, unquote
 
 import boto3
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Key
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from .config import Settings
-from .semver import legacy_semver
+from .markdown_utils import to_search_text
 
 log = logging.getLogger(__name__)
 
 MARKDOWN_TYPE = "text/markdown; charset=utf-8"
-META_FIELDS = [
-    "id",
-    "title",
-    "slug",
-    "parent_id",
-    "order",
-    "icon",
-    "description",
-    "published",
-    "created_at",
-    "updated_at",
-    "updated_by",
-    "version",
-    "semver",
-    "note",
-    "kind",
-]
+PAGE, SEARCH, REVIEW, REDIRECT, ASSET, TEMPLATE, COUNTER = (
+    "PAGE",
+    "SEARCH",
+    "REVIEW",
+    "REDIRECT",
+    "ASSET",
+    "TEMPLATE",
+    "COUNTER",
+)
+# uma transação do DynamoDB aceita até 100 operações; uma fica para o contador da árvore
+TRANSACT_LIMIT = 99
 
 
 class VersionConflict(Exception):
@@ -50,6 +64,14 @@ class VersionConflict(Exception):
 
 def utcnow() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _text_pk(page_id: str) -> str:
+    return f"TEXT#{page_id}"
+
+
+def _version_sk(version: int) -> str:
+    return f"{version:010d}"
 
 
 def _clean(value: Any) -> Any:
@@ -63,20 +85,14 @@ def _clean(value: Any) -> Any:
     return value
 
 
-def _with_semver(page: dict) -> dict:
-    """Páginas gravadas antes do x.y.z ganham a versão equivalente (revisão n → 1.0.n-1)."""
-    if "version" in page and not page.get("semver"):
-        page["semver"] = legacy_semver(page["version"])
-    return page
-
-
-def _ascii(value: str) -> str:
-    return value.encode("ascii", "ignore").decode() or "-"
+def _plain(item: dict) -> dict:
+    """Item do DynamoDB sem a chave (pk/sk) e sem Decimals."""
+    return {k: v for k, v in _clean(item).items() if k not in ("pk", "sk")}
 
 
 def safe_filename(name: str) -> str:
     name = name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    name = re.sub(r"[^A-Za-z0-9._-]+", "-", _ascii(name)).strip("-.")
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", name.encode("ascii", "ignore").decode()).strip("-.")
     return name[:120] or "file"
 
 
@@ -88,6 +104,7 @@ class Storage:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.bucket = settings.s3_bucket
+        self.table_name = settings.dynamodb_table
         session = boto3.session.Session(region_name=settings.aws_region)
         retries = {"max_attempts": 3, "mode": "standard"}
         self.dynamodb = session.resource(
@@ -95,7 +112,9 @@ class Storage:
             endpoint_url=settings.dynamodb_endpoint_url,
             config=Config(retries=retries),
         )
-        self.table = self.dynamodb.Table(settings.dynamodb_table)
+        self.table = self.dynamodb.Table(self.table_name)
+        # cliente do próprio resource: aceita valores Python comuns (inclusive nas transações)
+        self.client = self.dynamodb.meta.client
         if settings.s3_endpoint_url:
             # Emuladores S3 (SeaweedFS, LocalStack…): path-style e checksums só quando exigidos.
             s3_config = Config(
@@ -107,10 +126,12 @@ class Storage:
         else:
             s3_config = Config(retries=retries)
         self.s3 = session.client("s3", endpoint_url=settings.s3_endpoint_url, config=s3_config)
-        self._cache: tuple[float, list[dict]] | None = None
-        # índice de busca: páginas completas já preparadas; descartado a cada gravação desta instância
-        self._search_cache: tuple[float, list[dict]] | None = None
         self._lock = threading.Lock()
+        # (momento da conferência, valor do contador "tree")
+        self._tree: tuple[float, int] | None = None
+        # (valor do contador com que foram montadas, conteúdo)
+        self._pages: tuple[int, list[dict]] | None = None
+        self._search: tuple[int, list[dict]] | None = None
 
     # ------------------------------------------------------------------ infra
     def ensure_resources(self, attempts: int = 30) -> None:
@@ -120,6 +141,8 @@ class Storage:
                 self._ensure_table()
                 self._ensure_bucket()
                 return
+            except RuntimeError:
+                raise
             except Exception as exc:
                 if attempt == attempts:
                     raise
@@ -127,22 +150,30 @@ class Storage:
                 time.sleep(1.5)
 
     def _ensure_table(self) -> None:
-        client = self.dynamodb.meta.client
-        name = self.settings.dynamodb_table
         try:
-            client.describe_table(TableName=name)
-            return
+            table = self.client.describe_table(TableName=self.table_name)["Table"]
         except ClientError as exc:
             if _error_code(exc) != "ResourceNotFoundException":
                 raise
-        log.info("Criando tabela DynamoDB %s", name)
-        client.create_table(
-            TableName=name,
-            KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
-            AttributeDefinitions=[{"AttributeName": "id", "AttributeType": "S"}],
+        else:
+            keys = {k["AttributeName"]: k["KeyType"] for k in table["KeySchema"]}
+            if keys != {"pk": "HASH", "sk": "RANGE"}:
+                raise RuntimeError(
+                    f"A tabela {self.table_name} existe com outra chave ({keys}); este app espera pk (HASH) + sk "
+                    "(RANGE). Aponte DYNAMODB_TABLE para uma tabela nova."
+                )
+            return
+        log.info("Criando tabela DynamoDB %s", self.table_name)
+        self.client.create_table(
+            TableName=self.table_name,
+            KeySchema=[{"AttributeName": "pk", "KeyType": "HASH"}, {"AttributeName": "sk", "KeyType": "RANGE"}],
+            AttributeDefinitions=[
+                {"AttributeName": "pk", "AttributeType": "S"},
+                {"AttributeName": "sk", "AttributeType": "S"},
+            ],
             BillingMode="PAY_PER_REQUEST",
         )
-        client.get_waiter("table_exists").wait(TableName=name)
+        self.client.get_waiter("table_exists").wait(TableName=self.table_name)
 
     def _ensure_bucket(self) -> None:
         try:
@@ -160,7 +191,7 @@ class Storage:
     def health(self) -> dict[str, str]:
         status = {}
         try:
-            self.dynamodb.meta.client.describe_table(TableName=self.settings.dynamodb_table)
+            self.client.describe_table(TableName=self.table_name)
             status["dynamodb"] = "ok"
         except Exception as exc:
             status["dynamodb"] = f"erro: {exc}"
@@ -171,346 +202,314 @@ class Storage:
             status["s3"] = f"erro: {exc}"
         return status
 
-    # ------------------------------------------------------------------ páginas
-    def invalidate(self) -> None:
-        with self._lock:
-            self._cache = None
-            self._search_cache = None
+    # ------------------------------------------------------------------ DynamoDB: blocos básicos
+    def _get(self, pk: str, sk: str) -> dict | None:
+        item = self.table.get_item(Key={"pk": pk, "sk": sk}, ConsistentRead=True).get("Item")
+        return _plain(item) if item else None
 
-    def search_documents(self, prepare: Callable[[dict], dict]) -> list[dict]:
-        """Páginas completas transformadas por `prepare`, montadas com um único Scan e reaproveitadas.
+    def _put(self, pk: str, sk: str, data: dict) -> None:
+        self.table.put_item(Item={**data, "pk": pk, "sk": sk})
 
-        Gravações desta instância descartam o índice na hora; as de outras instâncias aparecem
-        em até SEARCH_CACHE_TTL_SECONDS.
-        """
-        with self._lock:
-            if self._search_cache and time.monotonic() - self._search_cache[0] < self.settings.search_cache_ttl_seconds:
-                return self._search_cache[1]
-        docs = [prepare(page) for page in self.list_pages(full=True)]
-        with self._lock:
-            self._search_cache = (time.monotonic(), docs)
-        return docs
-
-    def list_pages(self, *, full: bool = False) -> list[dict]:
-        """Lista todas as páginas. Sem `full`, retorna só metadados (com cache curto)."""
-        if not full:
-            with self._lock:
-                if self._cache and time.monotonic() - self._cache[0] < self.settings.cache_ttl_seconds:
-                    return [dict(p) for p in self._cache[1]]
-        # a tabela também guarda revisões e contadores (atributo "record"): só páginas aqui
-        names: dict[str, str] = {"#rec": "record"}
-        kwargs: dict[str, Any] = {"FilterExpression": "attribute_not_exists(#rec)"}
-        if not full:
-            names.update({f"#f{i}": field for i, field in enumerate(META_FIELDS)})
-            kwargs["ProjectionExpression"] = ", ".join(n for n in names if n != "#rec")
-        kwargs["ExpressionAttributeNames"] = names
+    def _query(self, pk: str, **kwargs: Any) -> list[dict]:
+        kwargs = {"KeyConditionExpression": Key("pk").eq(pk), "ConsistentRead": True, **kwargs}
         items: list[dict] = []
         while True:
-            resp = self.table.scan(**kwargs)
+            resp = self.table.query(**kwargs)
             items.extend(resp.get("Items", []))
             if "LastEvaluatedKey" not in resp:
-                break
+                return [_plain(i) for i in items]
             kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
-        pages = [_with_semver(_clean(item)) for item in items]
-        if not full:
-            with self._lock:
-                self._cache = (time.monotonic(), pages)
-            return [dict(p) for p in pages]
-        return pages
 
-    def get_page(self, page_id: str) -> dict | None:
-        item = self.table.get_item(Key={"id": page_id}).get("Item")
-        return _with_semver(_clean(item)) if item and "record" not in item else None
+    def _delete_items(self, keys: list[tuple[str, str]]) -> None:
+        with self.table.batch_writer() as batch:
+            for pk, sk in keys:
+                batch.delete_item(Key={"pk": pk, "sk": sk})
 
-    def put_page(self, item: dict) -> None:
-        self.table.put_item(Item=item)
-        self.invalidate()
+    def _put_op(self, pk: str, sk: str, data: dict) -> dict:
+        return {"Put": {"TableName": self.table_name, "Item": {**data, "pk": pk, "sk": sk}}}
 
-    def update_page(self, page_id: str, fields: dict[str, Any], expected_version: int | None = None) -> dict:
-        # Prefixos próprios: o boto3 usa "#n"/":v" para a ConditionExpression e colidiria.
-        names = {f"#fld{i}": key for i, key in enumerate(fields)}
-        values = {f":val{i}": value for i, value in enumerate(fields.values())}
-        sets = [f"#fld{i} = :val{i}" for i in range(len(fields))]
-        kwargs: dict[str, Any] = {
-            "Key": {"id": page_id},
-            "UpdateExpression": "SET " + ", ".join(sets),
-            "ExpressionAttributeNames": names,
-            "ExpressionAttributeValues": values,
-            "ReturnValues": "ALL_NEW",
-        }
-        condition = Attr("id").exists()
+    def _page_update_op(self, page_id: str, fields: dict, expected_version: int | None = None) -> dict:
+        names = {f"#f{i}": key for i, key in enumerate(fields)}
+        values = {f":v{i}": value for i, value in enumerate(fields.values())}
+        condition = "attribute_exists(pk)"
         if expected_version is not None:
-            condition = condition & Attr("version").eq(expected_version)
-        kwargs["ConditionExpression"] = condition
+            names["#expected"] = "version"
+            values[":expected"] = expected_version
+            condition += " AND #expected = :expected"
+        return {
+            "Update": {
+                "TableName": self.table_name,
+                "Key": {"pk": PAGE, "sk": page_id},
+                "UpdateExpression": "SET " + ", ".join(f"#f{i} = :v{i}" for i in range(len(fields))),
+                "ConditionExpression": condition,
+                "ExpressionAttributeNames": names,
+                "ExpressionAttributeValues": values,
+            }
+        }
+
+    def _tree_op(self) -> dict:
+        return {
+            "Update": {
+                "TableName": self.table_name,
+                "Key": {"pk": COUNTER, "sk": "tree"},
+                "UpdateExpression": "ADD #value :one",
+                "ExpressionAttributeNames": {"#value": "value"},
+                "ExpressionAttributeValues": {":one": 1},
+            }
+        }
+
+    def _write_pages(self, ops: list[dict]) -> None:
+        """Grava mudanças de páginas numa transação, junto do contador da árvore.
+
+        VersionConflict se uma condição (a versão esperada) falhar.
+        """
         try:
-            resp = self.table.update_item(**kwargs)
+            self.client.transact_write_items(TransactItems=[*ops, self._tree_op()])
         except ClientError as exc:
-            if _error_code(exc) == "ConditionalCheckFailedException":
-                raise VersionConflict(page_id) from exc
+            reasons = exc.response.get("CancellationReasons", [])
+            if _error_code(exc) == "TransactionCanceledException" and any(
+                r.get("Code") == "ConditionalCheckFailed" for r in reasons
+            ):
+                raise VersionConflict() from exc
             raise
         finally:
-            self.invalidate()
-        return _clean(resp["Attributes"])
+            self._forget()
+
+    def _forget(self) -> None:
+        """Esta instância acabou de gravar: a próxima leitura confere o contador da árvore na hora."""
+        with self._lock:
+            self._tree = None
+
+    # ------------------------------------------------------------------ versão da árvore
+    def tree_version(self) -> int:
+        """Valor do contador "tree": muda a cada gravação de página (serve de cache e de ETag)."""
+        now = time.monotonic()
+        with self._lock:
+            if self._tree and now - self._tree[0] < self.settings.cache_ttl_seconds:
+                return self._tree[1]
+        item = self._get(COUNTER, "tree")
+        value = int(item["value"]) if item else 0
+        with self._lock:
+            self._tree = (now, value)
+        return value
+
+    # ------------------------------------------------------------------ páginas
+    def list_pages(self) -> list[dict]:
+        """Todas as páginas (metadados e o `text` atual), montadas de novo só quando a árvore muda."""
+        version = self.tree_version()  # antes da leitura: uma gravação no meio só faz reler na próxima vez
+        with self._lock:
+            if self._pages and self._pages[0] == version:
+                return [dict(p) for p in self._pages[1]]
+        pages = self._query(PAGE)
+        with self._lock:
+            self._pages = (version, pages)
+        return [dict(p) for p in pages]
+
+    def search_documents(self, prepare: Callable[[dict], dict]) -> list[dict]:
+        """Páginas com o texto de busca, transformadas por `prepare` e reaproveitadas até a árvore mudar."""
+        version = self.tree_version()
+        with self._lock:
+            if self._search and self._search[0] == version:
+                return self._search[1]
+        texts = {item["id"]: item.get("text", "") for item in self._query(SEARCH)}
+        docs = [prepare({**page, "search_text": texts.get(page["id"], "")}) for page in self.list_pages()]
+        with self._lock:
+            self._search = (version, docs)
+        return docs
+
+    def get_page(self, page_id: str) -> dict | None:
+        return self._get(PAGE, page_id)
+
+    def create_page(self, page: dict, content: str) -> None:
+        text = self._put_text(page["id"], content, page)
+        try:
+            self._write_pages(
+                [
+                    self._put_op(PAGE, page["id"], {**page, "text": text}),
+                    self._put_op(SEARCH, page["id"], {"id": page["id"], "text": to_search_text(content)}),
+                ]
+            )
+        except Exception:
+            self._delete_object(text["key"])
+            raise
+
+    def save_page(self, page: dict, fields: dict, *, content: str | None = None, archive: bool = True) -> None:
+        """Grava `fields` (e um texto novo) se a página ainda está na versão de `page`; senão, VersionConflict.
+
+        Com `archive`, o texto substituído entra no histórico; sem (rascunhos), ele é descartado.
+        `fields` precisa trazer version, semver, note e updated_by: um texto novo guarda os mesmos.
+        """
+        page_id = page["id"]
+        previous = page.get("text")
+        text = None
+        ops = []
+        if content is not None:
+            text = self._put_text(page_id, content, fields)
+            fields = {**fields, "text": text}
+            ops.append(self._put_op(SEARCH, page_id, {"id": page_id, "text": to_search_text(content)}))
+            if archive and previous:
+                ops.append(
+                    self._put_op(
+                        _text_pk(page_id),
+                        _version_sk(previous["version"]),
+                        {**previous, "page_id": page_id, "archived_at": utcnow()},
+                    )
+                )
+        try:
+            self._write_pages([self._page_update_op(page_id, fields, page["version"]), *ops])
+        except Exception:
+            if text:
+                self._delete_object(text["key"])
+            raise
+        if text and previous and not archive:
+            self._delete_object(previous["key"])
+
+    def move_pages(self, changes: dict[str, dict]) -> None:
+        """Muda pai/ordem de várias páginas de uma vez (numa transação só, até 99 páginas)."""
+        ops = [self._page_update_op(page_id, fields) for page_id, fields in changes.items()]
+        for start in range(0, len(ops), TRANSACT_LIMIT):
+            self._write_pages(ops[start : start + TRANSACT_LIMIT])
 
     def delete_page(self, page_id: str) -> None:
-        self.table.delete_item(Key={"id": page_id})
-        self._delete_prefix(f"pages/{page_id}/")
-        self.invalidate()
+        history = [(_text_pk(page_id), _version_sk(e["version"])) for e in self._query(_text_pk(page_id))]
+        self._delete_items([(PAGE, page_id), (SEARCH, page_id), *history])
+        self.table.update_item(
+            Key={"pk": COUNTER, "sk": "tree"},
+            UpdateExpression="ADD #value :one",
+            ExpressionAttributeNames={"#value": "value"},
+            ExpressionAttributeValues={":one": 1},
+        )
+        self._forget()
+        self.delete_prefix(f"pages/{page_id}/")
+
+    # ------------------------------------------------------------------ textos e histórico
+    def _put_text(self, page_id: str, content: str, meta: dict) -> dict:
+        """Envia um texto novo (objeto imutável) e devolve o que a página guarda sobre ele."""
+        body = content.encode("utf-8")
+        key = f"pages/{page_id}/{meta['version']}-{uuid.uuid4().hex[:8]}.md"
+        self.s3.put_object(Bucket=self.bucket, Key=key, Body=body, ContentType=MARKDOWN_TYPE)
+        return {
+            "key": key,
+            "version": meta["version"],
+            "semver": meta["semver"],
+            "author": meta.get("updated_by", ""),
+            "note": meta.get("note", ""),
+            "saved_at": utcnow(),
+            "size": len(body),
+        }
+
+    def get_content(self, page: dict) -> str:
+        text = page.get("text")
+        return (self.get_text(text["key"]) or "") if text else ""
+
+    def list_history(self, page_id: str, limit: int = 50) -> list[dict]:
+        """Textos anteriores da página, do mais recente ao mais antigo."""
+        items = self.table.query(
+            KeyConditionExpression=Key("pk").eq(_text_pk(page_id)),
+            ScanIndexForward=False,
+            Limit=limit,
+            ConsistentRead=True,
+        )["Items"]
+        return [_history_entry(_plain(i)) for i in items]
+
+    def get_history(self, page_id: str, version_id: str) -> dict | None:
+        """Uma versão do histórico, com o texto (`content`)."""
+        if not version_id.isdigit():
+            return None
+        item = self._get(_text_pk(page_id), _version_sk(int(version_id)))
+        content = self.get_text(item["key"]) if item else None
+        return {**_history_entry(item), "content": content} if item and content is not None else None
+
+    def content_at_version(self, page_id: str, version: int, *, page: dict | None = None) -> str | None:
+        """Texto da página na versão `version` (ou o mais recente anterior, se a versão só mudou metadados).
+
+        None se nenhum texto dessa época foi guardado (rascunhos não guardam histórico).
+        """
+        page = page or self.get_page(page_id)
+        current = (page or {}).get("text")
+        if current and current["version"] <= version:
+            return self.get_text(current["key"])
+        items = self.table.query(
+            KeyConditionExpression=Key("pk").eq(_text_pk(page_id)) & Key("sk").lte(_version_sk(version)),
+            ScanIndexForward=False,
+            Limit=1,
+            ConsistentRead=True,
+        )["Items"]
+        return self.get_text(items[0]["key"]) if items else None
 
     # ------------------------------------------------------------------ revisões
-    # ------------------------------------------------------------------ redirecionamentos
-    # endereço antigo -> id da página (não o endereço novo): mudanças seguintes não criam cadeias
-    def put_redirect(self, old_path: str, page_id: str) -> None:
-        self.table.put_item(
-            Item={"id": f"redirect:{old_path}", "record": "redirect", "page_id": page_id, "created_at": utcnow()}
-        )
-
-    def get_redirect(self, old_path: str) -> str | None:
-        item = self.table.get_item(Key={"id": f"redirect:{old_path}"}).get("Item")
-        return item["page_id"] if item and item.get("record") == "redirect" else None
-
-    def put_review(self, item: dict) -> None:
-        self.table.put_item(Item={**item, "record": "review"})
+    def put_review(self, review: dict) -> None:
+        self._put(REVIEW, review["id"], review)
 
     def get_review(self, review_id: str) -> dict | None:
-        item = self.table.get_item(Key={"id": review_id}).get("Item")
-        return _clean(item) if item and item.get("record") == "review" else None
+        return self._get(REVIEW, review_id)
 
-    def list_reviews(self, page_id: str | None = None) -> list[dict]:
-        names = {"#rec": "record"}
-        values: dict[str, Any] = {":review": "review"}
-        expression = "#rec = :review"
-        if page_id:
-            names["#page"] = "page_id"
-            values[":page"] = page_id
-            expression += " AND #page = :page"
-        kwargs: dict[str, Any] = {
-            "FilterExpression": expression,
-            "ExpressionAttributeNames": names,
-            "ExpressionAttributeValues": values,
-        }
-        items: list[dict] = []
-        while True:
-            resp = self.table.scan(**kwargs)
-            items.extend(resp.get("Items", []))
-            if "LastEvaluatedKey" not in resp:
-                break
-            kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
-        return [_clean(i) for i in items]
+    def list_reviews(self) -> list[dict]:
+        return self._query(REVIEW)
 
-    def put_batch(self, item: dict) -> None:
-        self.table.put_item(Item={**item, "record": "batch"})
-
-    def get_batch(self, batch_id: str) -> dict | None:
-        item = self.table.get_item(Key={"id": batch_id}).get("Item")
-        return _clean(item) if item and item.get("record") == "batch" else None
-
-    def list_batches(self) -> list[dict]:
-        kwargs: dict[str, Any] = {
-            "FilterExpression": "#rec = :batch",
-            "ExpressionAttributeNames": {"#rec": "record"},
-            "ExpressionAttributeValues": {":batch": "batch"},
-        }
-        items: list[dict] = []
-        while True:
-            resp = self.table.scan(**kwargs)
-            items.extend(resp.get("Items", []))
-            if "LastEvaluatedKey" not in resp:
-                break
-            kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
-        return [_clean(i) for i in items]
-
-    def delete_reviews_for_page(self, page_id: str) -> None:
-        for review in self.list_reviews(page_id):
-            self.table.delete_item(Key={"id": review["id"]})
+    def delete_review(self, review_id: str) -> None:
+        self._delete_items([(REVIEW, review_id)])
+        self.delete_prefix(f"reviews/{review_id}/")
 
     def next_number(self, name: str) -> int:
-        """Contador atômico (ex.: número sequencial das revisões)."""
+        """Contador atômico (ex.: número sequencial das propostas)."""
         resp = self.table.update_item(
-            Key={"id": f"counter#{name}"},
-            UpdateExpression="SET #rec = :rec ADD #val :one",
-            ExpressionAttributeNames={"#rec": "record", "#val": "value"},
-            ExpressionAttributeValues={":rec": "counter", ":one": 1},
+            Key={"pk": COUNTER, "sk": name},
+            UpdateExpression="ADD #value :one",
+            ExpressionAttributeNames={"#value": "value"},
+            ExpressionAttributeValues={":one": 1},
             ReturnValues="UPDATED_NEW",
         )
         return int(resp["Attributes"]["value"])
 
-    # ------------------------------------------------------------------ objetos genéricos no S3
-    def put_text(self, key: str, text: str, content_type: str = MARKDOWN_TYPE) -> None:
-        self.s3.put_object(Bucket=self.bucket, Key=key, Body=text.encode("utf-8"), ContentType=content_type)
+    # ------------------------------------------------------------------ redirecionamentos
+    # endereço antigo -> id da página (não o endereço novo): mudanças seguintes não criam cadeias
+    def put_redirect(self, old_path: str, page_id: str) -> None:
+        self._put(REDIRECT, old_path, {"page_id": page_id, "created_at": utcnow()})
 
-    def get_text(self, key: str) -> str | None:
-        try:
-            obj = self.s3.get_object(Bucket=self.bucket, Key=key)
-        except ClientError as exc:
-            if _error_code(exc) in ("404", "NoSuchKey"):
-                return None
-            raise
-        return obj["Body"].read().decode("utf-8")
+    def get_redirect(self, old_path: str) -> str | None:
+        item = self._get(REDIRECT, old_path)
+        return item["page_id"] if item else None
 
-    def put_json(self, key: str, data: Any) -> None:
-        self.put_text(key, json.dumps(data, ensure_ascii=False), "application/json")
+    # ------------------------------------------------------------------ modelos de página
+    def put_template(self, template: dict) -> None:
+        self._put(TEMPLATE, template["id"], template)
 
-    def get_json(self, key: str, default: Any = None) -> Any:
-        text = self.get_text(key)
-        return default if text is None else json.loads(text)
+    def get_template(self, template_id: str) -> dict | None:
+        return self._get(TEMPLATE, template_id)
 
-    def list_keys(self, prefix: str) -> list[str]:
-        return [o["Key"] for o in self._list(prefix)]
+    def list_templates(self) -> list[dict]:
+        return self._query(TEMPLATE)
 
-    def delete_key(self, key: str) -> None:
-        self.s3.delete_object(Bucket=self.bucket, Key=key)
+    def delete_template(self, template_id: str) -> None:
+        self._delete_items([(TEMPLATE, template_id)])
 
-    def delete_prefix(self, prefix: str) -> None:
-        self._delete_prefix(prefix)
-
-    # ------------------------------------------------------------------ conteúdo
-    @staticmethod
-    def content_key(page_id: str) -> str:
-        return f"pages/{page_id}/content.md"
-
-    def get_content(self, page_id: str) -> str:
-        return self._get_text(self.content_key(page_id))
-
-    def put_content(
-        self,
-        page_id: str,
-        content: str,
-        author: str,
-        *,
-        version: int | None = None,
-        semver: str | None = None,
-        note: str = "",
-        archive: bool = True,
-    ) -> None:
-        """Grava o markdown atual; a versão anterior é arquivada com seus metadados (autor, versão, nota)."""
-        key = self.content_key(page_id)
-        if archive:
-            self._archive(page_id, key)
-        metadata = {"author": _ascii(author), "saved-at": utcnow()}
-        if version is not None:
-            metadata["version"] = str(version)
-        if semver:
-            metadata["semver"] = semver
-        if note:
-            # metadados do S3 só aceitam ASCII: a nota vai codificada como URL
-            metadata["note"] = quote(note[:200], safe="")
-        self.s3.put_object(
-            Bucket=self.bucket,
-            Key=key,
-            Body=content.encode("utf-8"),
-            ContentType=MARKDOWN_TYPE,
-            Metadata=metadata,
-        )
-
-    def _archive(self, page_id: str, key: str) -> None:
-        try:
-            self.s3.head_object(Bucket=self.bucket, Key=key)
-        except ClientError as exc:
-            if _error_code(exc) in ("404", "NoSuchKey", "NotFound"):
-                return
-            raise
-        # Momento do arquivamento com microssegundos (LastModified do S3 só tem precisão de segundos).
-        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-        self.s3.copy_object(
-            Bucket=self.bucket,
-            Key=f"pages/{page_id}/history/{stamp}.md",
-            CopySource={"Bucket": self.bucket, "Key": key},
-            MetadataDirective="COPY",
-        )
-
-    def list_history(self, page_id: str, limit: int = 50) -> list[dict]:
-        prefix = f"pages/{page_id}/history/"
-        objects = sorted(self._list(prefix), key=lambda o: o["Key"], reverse=True)[:limit]
-        entries = []
-        for obj in objects:
-            version_id = obj["Key"].removeprefix(prefix).removesuffix(".md")
-            try:
-                meta = self.s3.head_object(Bucket=self.bucket, Key=obj["Key"])["Metadata"]
-            except ClientError:
-                meta = {}
-            version = meta.get("version", "")
-            entries.append(
-                {
-                    "id": version_id,
-                    "author": meta.get("author", ""),
-                    "size": obj["Size"],
-                    "version": int(version) if version.isdigit() else None,
-                    "semver": meta.get("semver") or (legacy_semver(int(version)) if version.isdigit() else None),
-                    "note": unquote(meta.get("note", "")),
-                    # quando a versão foi escrita (fallback: quando foi arquivada)
-                    "created_at": meta.get("saved-at") or _parse_stamp(version_id) or obj["LastModified"].isoformat(),
-                    "archived_at": _parse_stamp(version_id) or obj["LastModified"].isoformat(),
-                }
-            )
-        return entries
-
-    def content_at_version(self, page_id: str, version: int) -> str | None:
-        """Texto da página na versão `version` (ou o mais recente anterior, se a versão só mudou metadados).
-
-        O texto atual e cada versão arquivada guardam o número da versão em que foram escritos. Devolve None
-        se nenhum deles puder ser localizado (histórico antigo demais ou sem número de versão).
-        """
-        candidates: list[tuple[int, str | None]] = []  # (versão do texto, id no histórico; None = texto atual)
-        try:
-            head = self.s3.head_object(Bucket=self.bucket, Key=self.content_key(page_id))
-            current = head["Metadata"].get("version", "")
-            if current.isdigit():
-                candidates.append((int(current), None))
-        except ClientError as exc:
-            if _error_code(exc) not in ("404", "NoSuchKey", "NotFound"):
-                raise
-        for entry in self.list_history(page_id, limit=500):
-            if entry.get("version") is not None:
-                candidates.append((entry["version"], entry["id"]))
-        eligible = [c for c in candidates if c[0] <= version]
-        if not eligible:
-            return None
-        _, version_id = max(eligible, key=lambda c: c[0])
-        return self.get_content(page_id) if version_id is None else self.get_history(page_id, version_id)
-
-    def get_history(self, page_id: str, version_id: str) -> str | None:
-        if not re.fullmatch(r"[0-9TZ]+", version_id):
-            return None
-        try:
-            obj = self.s3.get_object(Bucket=self.bucket, Key=f"pages/{page_id}/history/{version_id}.md")
-        except ClientError as exc:
-            if _error_code(exc) in ("404", "NoSuchKey"):
-                return None
-            raise
-        return obj["Body"].read().decode("utf-8")
-
-    # ------------------------------------------------------------------ mídia
+    # ------------------------------------------------------------------ arquivos
     def put_asset(
         self, data: bytes, filename: str, content_type: str, author: str, spec_kind: str | None = None
     ) -> dict:
         asset_id = uuid.uuid4().hex[:12]
         name = safe_filename(filename)
         key = f"assets/{asset_id}/{name}"
-        self.s3.put_object(
-            Bucket=self.bucket,
-            Key=key,
-            Body=data,
-            ContentType=content_type or "application/octet-stream",
-            Metadata={"author": _ascii(author), **({"spec-kind": spec_kind} if spec_kind else {})},
-        )
-        return self._asset_dict(key, len(data), datetime.now(UTC), content_type, spec_kind)
+        content_type = content_type or "application/octet-stream"
+        self.s3.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType=content_type)
+        asset = {
+            "id": asset_id,
+            "name": name,
+            "key": key,
+            "url": f"/api/assets/{asset_id}/{name}",
+            "size": len(data),
+            "content_type": content_type,
+            "last_modified": utcnow(),
+            # contrato OpenAPI/AsyncAPI reconhecido no envio
+            "spec_kind": spec_kind,
+            "author": author,
+        }
+        self._put(ASSET, asset_id, asset)
+        return asset
 
     def list_assets(self) -> list[dict]:
-        objects = sorted(self._list("assets/"), key=lambda o: o["LastModified"], reverse=True)
-        return [
-            self._asset_dict(o["Key"], o["Size"], o["LastModified"], spec_kind=self._spec_kind(o["Key"]))
-            for o in objects
-        ]
-
-    def _spec_kind(self, key: str) -> str | None:
-        """OpenAPI/AsyncAPI reconhecido no envio (guardado nos metadados; só vale olhar arquivos yaml/json)."""
-        if not key.lower().endswith((".yaml", ".yml", ".json")):
-            return None
-        try:
-            return self.s3.head_object(Bucket=self.bucket, Key=key).get("Metadata", {}).get("spec-kind")
-        except ClientError:
-            return None
+        return sorted(self._query(ASSET), key=lambda a: a["last_modified"], reverse=True)
 
     def get_asset(self, asset_id: str, filename: str) -> dict | None:
         try:
@@ -521,47 +520,48 @@ class Storage:
             raise
 
     def delete_asset(self, asset_id: str, filename: str) -> None:
-        self.s3.delete_object(Bucket=self.bucket, Key=f"assets/{asset_id}/{filename}")
+        self._delete_object(f"assets/{asset_id}/{filename}")
+        self._delete_items([(ASSET, asset_id)])
 
-    @staticmethod
-    def _asset_dict(
-        key: str, size: int, modified: datetime, content_type: str | None = None, spec_kind: str | None = None
-    ) -> dict:
-        _, asset_id, name = key.split("/", 2)
-        return {
-            "id": asset_id,
-            "name": name,
-            "key": key,
-            "url": f"/api/assets/{asset_id}/{name}",
-            "size": size,
-            "content_type": content_type,
-            "last_modified": modified.isoformat(),
-            "spec_kind": spec_kind,
-        }
+    # ------------------------------------------------------------------ S3
+    def put_text(self, key: str, text: str) -> None:
+        self.s3.put_object(Bucket=self.bucket, Key=key, Body=text.encode("utf-8"), ContentType=MARKDOWN_TYPE)
 
-    # ------------------------------------------------------------------ helpers
-    def _get_text(self, key: str) -> str:
+    def get_text(self, key: str) -> str | None:
         try:
             obj = self.s3.get_object(Bucket=self.bucket, Key=key)
         except ClientError as exc:
             if _error_code(exc) in ("404", "NoSuchKey"):
-                return ""
+                return None
             raise
         return obj["Body"].read().decode("utf-8")
+
+    def delete_prefix(self, prefix: str) -> None:
+        keys = [{"Key": o["Key"]} for o in self._list(prefix)]
+        for i in range(0, len(keys), 1000):
+            self.s3.delete_objects(Bucket=self.bucket, Delete={"Objects": keys[i : i + 1000], "Quiet": True})
+
+    def _delete_object(self, key: str) -> None:
+        try:
+            self.s3.delete_object(Bucket=self.bucket, Key=key)
+        except ClientError:
+            log.warning("Não foi possível apagar %s do S3", key, exc_info=True)
 
     def _list(self, prefix: str) -> Iterator[dict]:
         paginator = self.s3.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
             yield from page.get("Contents", [])
 
-    def _delete_prefix(self, prefix: str) -> None:
-        keys = [{"Key": o["Key"]} for o in self._list(prefix)]
-        for i in range(0, len(keys), 1000):
-            self.s3.delete_objects(Bucket=self.bucket, Delete={"Objects": keys[i : i + 1000], "Quiet": True})
 
-
-def _parse_stamp(stamp: str) -> str | None:
-    try:
-        return datetime.strptime(stamp, "%Y%m%dT%H%M%S%fZ").replace(tzinfo=UTC).isoformat(timespec="seconds")
-    except ValueError:
-        return None
+def _history_entry(item: dict) -> dict:
+    return {
+        "id": str(item["version"]),
+        "author": item.get("author", ""),
+        "size": item.get("size", 0),
+        "version": item["version"],
+        "semver": item["semver"],
+        "note": item.get("note", ""),
+        # quando o texto foi escrito e quando foi substituído pelo seguinte
+        "created_at": item["saved_at"],
+        "archived_at": item.get("archived_at", item["saved_at"]),
+    }

@@ -1,4 +1,5 @@
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from .service import DocsService
 from .storage import Storage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger(__name__)
 settings = get_settings()
 
 
@@ -41,6 +43,22 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+
+@app.middleware("http")
+async def timing(request: Request, call_next):
+    """Tempo de cada requisição no cabeçalho Server-Timing (aparece no DevTools) e no log, se passar do limite."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed = (time.perf_counter() - start) * 1000
+    response.headers["Server-Timing"] = f"app;dur={elapsed:.1f}"
+    if elapsed >= settings.slow_request_ms:
+        log.warning(
+            "Requisição lenta: %s %s -> %s em %.0f ms", request.method, request.url.path, response.status_code, elapsed
+        )
+    return response
+
+
 if settings.cors_origins:
     app.add_middleware(
         CORSMiddleware,
